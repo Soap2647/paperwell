@@ -315,6 +315,7 @@ function finishLine(cur) {
     };
     // Parçalar arası büyük boşluklara boşluk karakteri ekle (bazı üreticiler boşluk glifi koymaz)
     let text = '';
+    const chars = []; // her karakter için kaynak glif (eklenen boşluklarda null)
     let prev = null;
     for (const seg of cur.segments) {
         for (const g of seg.glyphs) {
@@ -322,9 +323,13 @@ function finishLine(cur) {
                 const inv = invert(prev.Trm);
                 const [nx] = apply(inv, g.Trm[4], g.Trm[5]);
                 const gapEm = nx - (prev.width || 0);
-                if (gapEm > 0.18 && !text.endsWith(' ') && g.unicode !== ' ') text += ' ';
+                if (gapEm > 0.18 && !text.endsWith(' ') && g.unicode !== ' ') {
+                    text += ' ';
+                    chars.push({ ch: ' ', glyph: null });
+                }
             }
             text += g.unicode;
+            for (const ch of g.unicode) chars.push({ ch, glyph: g });
             prev = g;
         }
     }
@@ -334,6 +339,7 @@ function finishLine(cur) {
         id: first.id,
         segments: cur.segments,
         text,
+        chars,
         rawText: cur.segments.map(segText).join(''),
         box,
         fontSize: cur.size,

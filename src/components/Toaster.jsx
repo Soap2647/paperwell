@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
 // Basit global bildirim sistemi: toast('Kaydedildi', 'success')
@@ -13,9 +12,9 @@ export function toast(text, type = 'info', duration = 3500) {
 }
 
 const STYLES = {
-    success: { icon: CheckCircle2, cls: 'border-emerald-500/30 text-emerald-200', iconCls: 'text-emerald-400' },
-    error: { icon: AlertCircle, cls: 'border-red-500/30 text-red-200', iconCls: 'text-red-400' },
-    info: { icon: Info, cls: 'border-white/10 text-gray-200', iconCls: 'text-purple-300' },
+    success: { icon: CheckCircle2, cls: 'text-success' },
+    error: { icon: AlertCircle, cls: 'text-danger' },
+    info: { icon: Info, cls: 'text-accent' },
 };
 
 export default function Toaster() {
@@ -24,38 +23,26 @@ export default function Toaster() {
     useEffect(() => {
         const add = (item) => {
             setItems((prev) => [...prev.slice(-3), item]);
-            setTimeout(() => setItems((prev) => prev.filter((i) => i.id !== item.id)), item.duration);
+            setTimeout(() => setItems((prev) => prev.filter((i) => i.id !== item.id)), item.type === 'error' ? Math.max(item.duration, 6000) : item.duration);
         };
         listeners.add(add);
         return () => listeners.delete(add);
     }, []);
 
-    const dismiss = (id) => setItems((prev) => prev.filter((i) => i.id !== id));
-
     return (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] flex flex-col items-center gap-2 pointer-events-none" role="status" aria-live="polite">
-            <AnimatePresence>
-                {items.map((item) => {
-                    const { icon: Icon, cls, iconCls } = STYLES[item.type] || STYLES.info;
-                    return (
-                        <motion.div
-                            key={item.id}
-                            layout
-                            initial={{ opacity: 0, y: -12, scale: 0.96 }}
-                            animate={{ opacity: 1, y: 0, scale: 1 }}
-                            exit={{ opacity: 0, y: -12, scale: 0.96 }}
-                            transition={{ duration: 0.18 }}
-                            className={`pointer-events-auto flex items-center gap-2.5 pl-3 pr-2 py-2 rounded-xl bg-gray-900/95 backdrop-blur-xl border shadow-2xl shadow-black/40 text-sm max-w-md ${cls}`}
-                        >
-                            <Icon className={`w-4 h-4 shrink-0 ${iconCls}`} />
-                            <span>{item.text}</span>
-                            <button onClick={() => dismiss(item.id)} className="p-1 rounded-md text-gray-500 hover:text-gray-200 hover:bg-white/10" aria-label="Kapat">
-                                <X className="w-3.5 h-3.5" />
-                            </button>
-                        </motion.div>
-                    );
-                })}
-            </AnimatePresence>
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[300] flex flex-col items-center gap-2 pointer-events-none" role="status" aria-live="polite">
+            {items.map((item) => {
+                const { icon: Icon, cls } = STYLES[item.type] || STYLES.info;
+                return (
+                    <div key={item.id} className="pointer-events-auto flex items-center gap-2.5 pl-3 pr-1.5 py-2 rounded-xl bg-surface border border-line shadow-float text-[13px] max-w-md animate-[toastIn_.18s_ease-out]">
+                        <Icon className={`w-4 h-4 shrink-0 ${cls}`} />
+                        <span className="text-fg">{item.text}</span>
+                        <button onClick={() => setItems((p) => p.filter((i) => i.id !== item.id))} className="p-1 rounded-md text-fg-3 hover:text-fg hover:bg-surface-3" aria-label="Kapat">
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+                );
+            })}
         </div>
     );
 }
