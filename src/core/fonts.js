@@ -3,7 +3,7 @@ import fontkit from '@pdf-lib/fontkit';
 
 export const FONT_FAMILIES = {
     sans: { label: 'Sans (Arial uyumlu)', css: '"Liberation Sans", Arial, Helvetica, sans-serif', file: 'LiberationSans' },
-    serif: { label: 'Serif', css: '"Noto Serif", Georgia, "Times New Roman", serif', file: 'NotoSerif' },
+    serif: { label: 'Serif', css: '"DejaVu Serif", Georgia, "Times New Roman", serif', file: 'DejaVuSerif' },
     mono: { label: 'Mono', css: '"DejaVu Sans Mono", Consolas, monospace', file: 'DejaVuSansMono' },
 };
 
@@ -46,7 +46,7 @@ let cssRegistered = false;
 export function registerCssFonts() {
     if (cssRegistered || typeof document === 'undefined') return;
     cssRegistered = true;
-    const names = { sans: 'Liberation Sans', serif: 'Noto Serif', mono: 'DejaVu Sans Mono' };
+    const names = { sans: 'Liberation Sans', serif: 'DejaVu Serif', mono: 'DejaVu Sans Mono' };
     for (const fam of Object.keys(names)) {
         for (const [bold, italic] of [[false, false], [true, false], [false, true], [true, true]]) {
             const face = new FontFace(names[fam], `url(${fontUrl(fam, bold, italic)})`, {
