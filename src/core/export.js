@@ -8,7 +8,6 @@ import { pageGeometry } from './pdf/geometry';
 import { pageBox, pageRotation } from './pdf/pageModel';
 import { viewBoxToPdf } from './pdf/placement';
 import { embedFallbackFont } from './fonts';
-import { fillForm } from './forms';
 
 export function hexToRgb01(hex = '#000000') {
     const h = hex.replace('#', '');
@@ -193,7 +192,11 @@ export async function exportPdf(bytes, pages, objects, meta, forms) {
     const hasForm = forms && (Object.keys(forms.values || {}).length || forms.flatten);
     if (!hasObjects && !meta && !hasForm) return bytes;
     const doc = await PDFDocument.load(bytes, { updateMetadata: false });
-    if (hasForm) await fillForm(doc, forms.values, { flatten: forms.flatten });
+    if (hasForm) {
+        // forms.js pdf.js'e bağlı; yalnız form varsa yükle (Node testleri pdf.js'siz çalışsın)
+        const { fillForm } = await import('./forms');
+        await fillForm(doc, forms.values, { flatten: forms.flatten });
+    }
     for (let i = 0; i < pages.length; i++) {
         const objs = objects[pages[i].id];
         if (!objs?.length) continue;
