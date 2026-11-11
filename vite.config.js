@@ -17,4 +17,6 @@ export default defineConfig({
     },
   },
   optimizeDeps: { exclude: ['onnxruntime-web'] },
+  // Tauri derlemesi sırasında target/ altındaki kilitli dosyalar izleyiciyi çökertmesin
+  server: { watch: { ignored: ['**/src-tauri/**'] } },
 })
