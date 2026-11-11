@@ -155,7 +155,8 @@ fn main() {
             ai::ai_cached,
             ai::ai_download,
             ai::ai_load,
-            ai::ai_run
+            ai::ai_run,
+            ai::ai_free
         ])
         .run(tauri::generate_context!())
         .expect("Paperwell başlatılamadı");

@@ -105,3 +105,78 @@ export async function openInInkwell(bytes, name) {
     const { core } = await tauri();
     return core.invoke('open_in_inkwell', bytes, { headers: { 'x-name': encodeURIComponent(name) } });
 }
+
+// ─── Yerel yapay zekâ (ONNX Runtime + DirectML, Rust tarafı) ────────────────
+// Tensörler ham bayt olarak gider: [u32 başlık uzunluğu][başlık JSON][dolgu][8 bayt hizalı veriler]
+
+const ARRAYS = { float32: Float32Array, uint8: Uint8Array, int8: Int8Array, int32: Int32Array, int64: BigInt64Array, bool: Uint8Array };
+
+function packTensors(session, feeds, keep) {
+    const tensors = [], parts = [];
+    let off = 0;
+    for (const [name, t] of Object.entries(feeds)) {
+        if (t.ref) { tensors.push({ name, type: t.type, dims: t.dims, ref: t.ref }); continue; }
+        const bytes = new Uint8Array(t.data.buffer, t.data.byteOffset, t.data.byteLength);
+        tensors.push({ name, type: t.type, dims: Array.from(t.dims), offset: off, length: bytes.length });
+        parts.push([off, bytes]);
+        off = (off + bytes.length + 7) & ~7;
+    }
+    const head = new TextEncoder().encode(JSON.stringify({ session, tensors, keep }));
+    const start = (4 + head.length + 7) & ~7;
+    const buf = new Uint8Array(start + off);
+    new DataView(buf.buffer).setUint32(0, head.length, true);
+    buf.set(head, 4);
+    for (const [o, b] of parts) buf.set(b, start + o);
+    return buf;
+}
+
+function unpackTensors(raw) {
+    const buf = raw instanceof ArrayBuffer ? raw : raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength);
+    const n = new DataView(buf).getUint32(0, true);
+    const head = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 4, n)));
+    const start = (4 + n + 7) & ~7;
+    const out = {};
+    for (const t of head.tensors) {
+        if (t.ref) { out[t.name] = { type: t.type, dims: t.dims, ref: t.ref }; continue; }
+        const A = ARRAYS[t.type];
+        out[t.name] = { type: t.type, dims: t.dims, data: new A(buf, start + t.offset, t.length / A.BYTES_PER_ELEMENT) };
+    }
+    return out;
+}
+
+/** @returns {Promise<{provider:string, adapter?:string, vram_mb?:number, reason?:string}|null>} */
+export async function nativeAiInfo() {
+    if (!isDesktop) return null;
+    const { core } = await tauri();
+    return core.invoke('ai_info');
+}
+
+export async function nativeModelCached(urls) {
+    const { core } = await tauri();
+    return core.invoke('ai_cached', { urls });
+}
+
+export async function nativeDownload(url, onProgress) {
+    const { core, event } = await tauri();
+    const un = await event.listen('ai-download', (e) => {
+        if (e.payload.url === url && e.payload.total) onProgress?.(Math.min(0.99, e.payload.loaded / e.payload.total));
+    });
+    try { await core.invoke('ai_download', { url }); } finally { un(); }
+    onProgress?.(1);
+}
+
+/** @returns {Promise<{session:number, inputs:string[], outputs:string[], provider:string}>} */
+export async function nativeLoad(urls, gpu = true) {
+    const { core } = await tauri();
+    return core.invoke('ai_load', { args: { urls, gpu } });
+}
+
+export async function nativeRun(session, feeds, keep = []) {
+    const { core } = await tauri();
+    return unpackTensors(await core.invoke('ai_run', packTensors(session, feeds, keep)));
+}
+
+export async function nativeFree(refs) {
+    const { core } = await tauri();
+    return core.invoke('ai_free', { refs });
+}

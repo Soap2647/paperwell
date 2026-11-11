@@ -1,27 +1,27 @@
 // Görseldeki yazıyı bulur ve okur: PaddleOCR (Apache-2.0) algılama (DB, eğik yazı dahil) + Latin tanıma (Türkçe destekli).
 // Modeller ilk kullanımda iner (~10 MB), Cache Storage'da saklanır.
-import { fetchModel, isModelCached, getOrt, createSession } from './modelStore';
+import { fetchModel, isModelCached } from './modelStore';
+import { openModel, isCached, tensor } from './inference';
 
 const BASE = 'https://huggingface.co/monkt/paddleocr-onnx/resolve/7b02d0a30a07ba2b92ad1ff5a8941ae2c633de65/';
 export const OCR_URLS = [`${BASE}detection/v3/det.onnx`, `${BASE}languages/latin/rec.onnx`, `${BASE}languages/latin/dict.txt`];
 export const OCR_BYTES = 10.3e6;
 
 let loading = null;
-export const isTextModelCached = () => isModelCached(...OCR_URLS);
+// sözlük küçük bir metin dosyası: her iki yolda da tarayıcı önbelleğinden gelir
+export const isTextModelCached = async () => (await isCached(OCR_URLS.slice(0, 2))) && (await isModelCached(OCR_URLS[2]));
 
 export function loadTextModels(onProgress) {
     if (!loading) {
         loading = (async () => {
-            const ort = await getOrt();
-            const det = await fetchModel(OCR_URLS[0], (p) => onProgress?.(p * 0.23), 2.4e6);
-            const rec = await fetchModel(OCR_URLS[1], (p) => onProgress?.(0.23 + p * 0.76), 7.9e6);
+            const det = await openModel([{ url: OCR_URLS[0], bytes: 2.4e6 }], (p) => onProgress?.(p * 0.23));
+            const rec = await openModel([{ url: OCR_URLS[1], bytes: 7.9e6 }], (p) => onProgress?.(0.23 + p * 0.76));
             const dict = new TextDecoder().decode(await fetchModel(OCR_URLS[2], null, 3e3)).split(/\r?\n/);
             if (dict[dict.length - 1] === '') dict.pop();
             onProgress?.(1);
             return {
-                ort,
-                det: await createSession(det, { webgpu: false }),
-                rec: await createSession(rec, { webgpu: false }),
+                det,
+                rec,
                 // 0: CTC boşluğu, 1..n sözlük, n+1: boşluk karakteri
                 chars: ['', ...dict, ' '],
             };
@@ -80,7 +80,7 @@ export function rectCorners({ cx, cy, w, h, angle }) {
  * @returns {Promise<{cx,cy,w,h,angle,score}[]>} canvas piksel koordinatlarında satır kutuları
  */
 export async function detectText(canvas, { maxSide = 1280 } = {}) {
-    const { ort, det } = await loadTextModels();
+    const { det } = await loadTextModels();
     const k = Math.min(1, maxSide / Math.max(canvas.width, canvas.height));
     const W = Math.max(32, Math.round((canvas.width * k) / 32) * 32), H = Math.max(32, Math.round((canvas.height * k) / 32) * 32);
     const c = new OffscreenCanvas(W, H);
@@ -94,7 +94,7 @@ export async function detectText(canvas, { maxSide = 1280 } = {}) {
         // PaddleOCR BGR sırasıyla eğitildi
         for (let ch = 0; ch < 3; ch++) input[ch * plane + i] = (px[i * 4 + (2 - ch)] / 255 - mean[ch]) / std[ch];
     }
-    const out = await det.run({ x: new ort.Tensor('float32', input, [1, 3, H, W]) });
+    const out = await det.run({ x: tensor('float32', input, [1, 3, H, W]) });
     const prob = Object.values(out)[0].data;
 
     // İkili harita → bağlı bileşenler → döndürülmüş kutu (DB son işlemi)
@@ -150,7 +150,7 @@ export function cropRotated(canvas, box, height) {
 
 /** @returns {Promise<{text:string, conf:number}>} */
 export async function recognize(canvas, box) {
-    const { ort, rec, chars } = await loadTextModels();
+    const { rec, chars } = await loadTextModels();
     const crop = cropRotated(canvas, box, 48);
     const W = Math.min(1600, crop.width), H = 48;
     const px = crop.getContext('2d').getImageData(0, 0, W, H).data;
@@ -158,7 +158,7 @@ export async function recognize(canvas, box) {
     for (let i = 0; i < plane; i++) {
         for (let ch = 0; ch < 3; ch++) input[ch * plane + i] = (px[i * 4 + (2 - ch)] / 255 - 0.5) / 0.5;
     }
-    const out = await rec.run({ x: new ort.Tensor('float32', input, [1, 3, H, W]) });
+    const out = await rec.run({ x: tensor('float32', input, [1, 3, H, W]) });
     const t = Object.values(out)[0];
     const [, T, C] = t.dims;
     let text = '', last = 0, conf = 0, n = 0;

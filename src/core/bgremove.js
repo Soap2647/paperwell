@@ -1,7 +1,7 @@
 // Arka plan kaldırma: görseldeki ana nesneyi ayırır, arka planı şeffaf / düz renk / bulanık yapar.
 // Hızlı: U²-Netp (Apache-2.0, ~4.6 MB). Hassas: U²-Netp'nin bulduğu nesne SAM 2 ile keskinleştirilir (+~62 MB).
 // (BiRefNet / BEN2 denendi: tarayıcıda WASM belleğine sığmıyor, WebGPU'da desteklenmeyen düğümler var.)
-import { fetchModel, isModelCached, getOrt, createSession } from './modelStore';
+import { openModel, isCached, tensor } from './inference';
 import { isSam2Cached, encodeImage2, decode2, SAM2_BYTES } from './segment2';
 
 const MEAN = [0.485, 0.456, 0.406];
@@ -58,17 +58,13 @@ export async function predictAlphaPrecise(image, onProgress) {
 const sessions = {};
 
 export function isBgModelCached(quality) {
-    return isModelCached(BG_MODELS[quality].url);
+    return isCached([BG_MODELS[quality].url]);
 }
 
 export function loadBgModel(quality, onProgress) {
     if (!sessions[quality]) {
         const m = BG_MODELS[quality];
-        sessions[quality] = (async () => {
-            const ort = await getOrt();
-            const model = await fetchModel(m.url, onProgress, m.bytes);
-            return { ort, session: await createSession(model, { webgpu: false }) };
-        })().catch((e) => {
+        sessions[quality] = openModel([{ url: m.url, bytes: m.bytes }], onProgress).catch((e) => {
             delete sessions[quality];
             throw e;
         });
@@ -82,7 +78,7 @@ export function loadBgModel(quality, onProgress) {
  */
 export async function predictAlpha(image, quality = 'fast', onProgress) {
     const m = BG_MODELS[quality];
-    const { ort, session } = await loadBgModel(quality, onProgress);
+    const session = await loadBgModel(quality, onProgress);
     const S = m.size, W = image.width, H = image.height;
     // Model girdisi: kare boyuta gerilmiş, ImageNet normalleştirmeli RGB
     const c = new OffscreenCanvas(S, S);
@@ -95,7 +91,7 @@ export async function predictAlpha(image, quality = 'fast', onProgress) {
     for (let i = 0; i < plane; i++) {
         for (let ch = 0; ch < 3; ch++) input[ch * plane + i] = (px[i * 4 + ch] / 255 - MEAN[ch]) / m.std[ch];
     }
-    const out = await session.run({ [session.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, S, S]) });
+    const out = await session.run({ [session.inputNames[0]]: tensor('float32', input, [1, 3, S, S]) });
     // Birden çok çıktılı modellerde birleşik maske 'output_image', yoksa ilk çıktı
     const name = session.outputNames.includes('output_image') ? 'output_image' : session.outputNames[0];
     const pred = out[name].data;

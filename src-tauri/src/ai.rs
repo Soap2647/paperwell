@@ -39,6 +39,9 @@ pub struct Ai {
     info: Mutex<Option<AccelInfo>>,
     sessions: Mutex<Vec<Arc<Loaded>>>,
     by_key: Mutex<HashMap<String, (usize, String)>>,
+    /// Rust'ta tutulan çıktılar (ör. SAM gömmeleri): her çözümde 16 MB'ı yeniden göndermemek için
+    stash: Mutex<HashMap<u64, Arc<DynValue>>>,
+    next_ref: std::sync::atomic::AtomicU64,
 }
 
 static ENV: OnceLock<Result<ort::environment::Environment, String>> = OnceLock::new();
@@ -82,10 +85,9 @@ impl Ai {
         g.clone().unwrap()
     }
 
+    /// Tek bir model DirectML'de açılamadıysa o model CPU'da çalışır; diğerleri GPU'da kalır, neden bildirilir
     fn gpu_failed(&self, reason: String) {
-        let mut g = self.info.lock().unwrap();
-        if let Some(i) = g.as_mut() {
-            i.provider = "cpu".into();
+        if let Some(i) = self.info.lock().unwrap().as_mut() {
             i.reason = Some(reason);
         }
     }
@@ -284,14 +286,22 @@ struct TensorHead {
     #[serde(rename = "type")]
     ty: String,
     dims: Vec<i64>,
+    #[serde(default)]
     offset: usize,
+    #[serde(default)]
     length: usize,
+    /// Veri yerine Rust'ta tutulan tensörün kimliği
+    #[serde(default, rename = "ref", skip_serializing_if = "Option::is_none")]
+    reference: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct Head {
     session: usize,
     tensors: Vec<TensorHead>,
+    /// Rust'ta tutulacak (JS'e verisi gönderilmeyecek) çıktı adları
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    keep: Vec<String>,
 }
 
 fn parse(body: &[u8]) -> Result<(Head, &[u8]), String> {
@@ -362,20 +372,22 @@ fn from_value(v: &DynValue) -> Result<Raw, String> {
     })
 }
 
-fn encode(session: usize, outs: Vec<(String, Raw)>) -> Vec<u8> {
+fn encode(session: usize, outs: Vec<(TensorHead, Vec<u8>)>) -> Vec<u8> {
     let mut tensors = Vec::new();
     let mut off = 0;
-    for (name, (ty, dims, data)) in &outs {
-        tensors.push(TensorHead { name: name.clone(), ty: ty.clone(), dims: dims.clone(), offset: off, length: data.len() });
+    for (mut t, data) in outs.iter().map(|(t, d)| (TensorHead { name: t.name.clone(), ty: t.ty.clone(), dims: t.dims.clone(), offset: 0, length: 0, reference: t.reference }, d)) {
+        t.offset = off;
+        t.length = data.len();
         off = (off + data.len() + 7) & !7;
+        tensors.push(t);
     }
-    let head = serde_json::to_vec(&Head { session, tensors }).unwrap();
+    let head = serde_json::to_vec(&Head { session, tensors, keep: vec![] }).unwrap();
     let start = (4 + head.len() + 7) & !7;
     let mut out = vec![0u8; start + off];
     out[..4].copy_from_slice(&(head.len() as u32).to_le_bytes());
     out[4..4 + head.len()].copy_from_slice(&head);
     let mut off = 0;
-    for (_, (_, _, data)) in &outs {
+    for (_, data) in &outs {
         out[start + off..start + off + data.len()].copy_from_slice(data);
         off = (off + data.len() + 7) & !7;
     }
@@ -385,17 +397,52 @@ fn encode(session: usize, outs: Vec<(String, Raw)>) -> Vec<u8> {
 fn run(ai: &Ai, body: &[u8]) -> Result<Vec<u8>, String> {
     let (head, data) = parse(body)?;
     let s = ai.sessions.lock().unwrap().get(head.session).cloned().ok_or("oturum yok")?;
-    let mut inputs: Vec<(String, DynValue)> = Vec::with_capacity(head.tensors.len());
-    for t in &head.tensors {
-        inputs.push((t.name.clone(), to_value(t, data)?));
+    // Önce saklı tensörleri topla (görünümleri bunlardan ödünç alınır)
+    let mut held: Vec<Option<Arc<DynValue>>> = Vec::with_capacity(head.tensors.len());
+    {
+        let stash = ai.stash.lock().unwrap();
+        for t in &head.tensors {
+            held.push(match t.reference {
+                Some(r) => Some(stash.get(&r).cloned().ok_or("saklı tensör bulunamadı")?),
+                None => None,
+            });
+        }
+    }
+    let mut inputs: Vec<(String, ort::session::SessionInputValue)> = Vec::with_capacity(head.tensors.len());
+    for (t, h) in head.tensors.iter().zip(&held) {
+        match h {
+            Some(v) => inputs.push((t.name.clone(), v.view().into())),
+            None => inputs.push((t.name.clone(), to_value(t, data)?.into())),
+        }
     }
     let mut session = s.session.lock().unwrap();
-    let outputs = session.run(inputs).map_err(|e| e.to_string())?;
+    let mut outputs = session.run(inputs).map_err(|e| e.to_string())?;
     let mut res = Vec::new();
     for name in &s.outputs {
-        res.push((name.clone(), from_value(&outputs[name.as_str()])?));
+        if head.keep.contains(name) {
+            let v = outputs.remove(name.as_str()).ok_or("çıktı yok")?;
+            let (ty, dims) = match v.dtype() {
+                ValueType::Tensor { ty, shape, .. } => (format!("{ty:?}").to_lowercase(), shape.to_vec()),
+                _ => return Err("tensör olmayan çıktı".into()),
+            };
+            let id = ai.next_ref.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            ai.stash.lock().unwrap().insert(id, Arc::new(v));
+            res.push((TensorHead { name: name.clone(), ty, dims, offset: 0, length: 0, reference: Some(id) }, Vec::new()));
+        } else {
+            let (ty, dims, bytes) = from_value(&outputs[name.as_str()])?;
+            res.push((TensorHead { name: name.clone(), ty, dims, offset: 0, length: 0, reference: None }, bytes));
+        }
     }
     Ok(encode(head.session, res))
+}
+
+/// Saklı tensörleri bırakır
+#[tauri::command]
+pub fn ai_free(ai: State<Ai>, refs: Vec<u64>) {
+    let mut stash = ai.stash.lock().unwrap();
+    for r in refs {
+        stash.remove(&r);
+    }
 }
 
 /// Ham bayt girdi → ham bayt çıktı (biçim dosya başında)
