@@ -8,8 +8,11 @@ fn main() {
     let dst = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("target").join("bundle-libs");
     std::fs::create_dir_all(&dst).unwrap();
     let src = profile_dir.join("DirectML.dll");
+    let same = |a: &std::path::Path, b: &std::path::Path| std::fs::metadata(a).ok().map(|m| m.len()) == std::fs::metadata(b).ok().map(|m| m.len());
     if src.is_file() {
-        std::fs::copy(&src, dst.join("DirectML.dll")).unwrap();
+        if !same(&src, &dst.join("DirectML.dll")) {
+            std::fs::copy(&src, dst.join("DirectML.dll")).unwrap();
+        }
     } else if !dst.join("DirectML.dll").is_file() {
         println!("cargo:warning=DirectML.dll bulunamadı ({})", src.display());
     }

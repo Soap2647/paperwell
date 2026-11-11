@@ -22,7 +22,8 @@ export function loadSam2(onProgress) {
             const f = (i) => ({ url: SAM2_URLS[i], bytes: sizes[i] });
             const total = SAM2_BYTES;
             const encoder = await openModel([f(0), f(1)], (p) => onProgress?.((p * (sizes[0] + sizes[1])) / total));
-            const decoder = await openModel([f(2), f(3)], (p) => onProgress?.((sizes[0] + sizes[1] + p * (sizes[2] + sizes[3])) / total));
+            // int8 çözücü küçük ama DirectML'de çağrı başına ~300 ms; yerelde CPU'da çok daha hızlı
+            const decoder = await openModel([f(2), f(3)], (p) => onProgress?.((sizes[0] + sizes[1] + p * (sizes[2] + sizes[3])) / total), { gpu: false });
             return { encoder, decoder };
         })().catch((e) => { loading = null; throw e; });
     }

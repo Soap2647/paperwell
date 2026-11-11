@@ -39,19 +39,20 @@ const freeRegistry = globalThis.FinalizationRegistry ? new globalThis.Finalizati
 /**
  * Modeli indirir (önbellekte yoksa) ve oturum açar.
  * @param {{url: string, bytes: number}[]} files - ilk dosya model, diğerleri harici veri (.onnx_data)
- * @param {{webgpu?: boolean, gpu?: boolean}} opts - webgpu: tarayıcı yolunda WebGPU dene; gpu: yerelde DirectML kullan
+ * @param {{webgpu?: boolean, gpu?: boolean, exclusive?: boolean}} opts - webgpu: tarayıcı yolunda WebGPU dene;
+ *   gpu: yerelde DirectML kullan; exclusive: büyük model, çalışırken ekran kartı belleğini tek başına kullanır
  * @returns {Promise<{backend: 'gpu'|'cpu'|'browser', inputNames: string[], outputNames: string[],
  *   run: (feeds: object, opts?: {keep?: string[]}) => Promise<object>}>}
  *   keep: bu çıktılar tekrar girdi olarak kullanılacak (yerelde Rust'ta kalır, verisi gelmez)
  */
-export async function openModel(files, onProgress, { webgpu = false, gpu = true } = {}) {
+export async function openModel(files, onProgress, { webgpu = false, gpu = true, exclusive = false } = {}) {
     const total = files.reduce((s, f) => s + f.bytes, 0);
     let done = 0;
     const step = (f) => (p) => onProgress?.(Math.min(0.99, (done + (p || 0) * f.bytes) / total));
 
     if (await isNative()) {
         for (const f of files) { await nativeDownload(f.url, step(f)); done += f.bytes; }
-        const s = await nativeLoad(files.map((f) => f.url), gpu);
+        const s = await nativeLoad(files.map((f) => f.url), { gpu, exclusive });
         onProgress?.(1);
         return {
             backend: s.provider === 'directml' ? 'gpu' : 'cpu',

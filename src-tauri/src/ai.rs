@@ -29,7 +29,12 @@ pub struct AccelInfo {
 }
 
 struct Loaded {
-    session: Mutex<Session>,
+    /// None: ekran kartı belleği için boşaltıldı, ilk çalıştırmada yeniden açılır
+    session: Mutex<Option<Session>>,
+    path: PathBuf,
+    gpu: std::sync::atomic::AtomicBool,
+    /// Ekran kartı belleğini tek başına isteyen büyük model (ör. BiRefNet)
+    exclusive: bool,
     inputs: Vec<String>,
     outputs: Vec<String>,
 }
@@ -208,6 +213,9 @@ pub struct LoadArgs {
     /// false: GPU varken bile CPU (ör. DirectML'de hatalı çalışan model)
     #[serde(default = "yes")]
     gpu: bool,
+    /// Büyük model: çalışırken diğer GPU oturumları boşaltılır (ve tersi), bellek sistem RAM'ine taşmasın
+    #[serde(default)]
+    exclusive: bool,
 }
 fn yes() -> bool {
     true
@@ -255,7 +263,9 @@ pub async fn ai_load(app: AppHandle, args: LoadArgs) -> Result<Loadedinfo, Strin
     }
     let t0 = Instant::now();
     let app2 = app.clone();
+    let path2 = path.clone();
     let (session, provider) = tauri::async_runtime::spawn_blocking(move || -> Result<(Session, String), String> {
+        let path = path2;
         if want_gpu {
             match build(&path, true) {
                 Ok(s) => return Ok((s, "directml".into())),
@@ -269,7 +279,10 @@ pub async fn ai_load(app: AppHandle, args: LoadArgs) -> Result<Loadedinfo, Strin
     let loaded = Arc::new(Loaded {
         inputs: session.inputs().iter().map(|o| o.name().to_string()).collect(),
         outputs: session.outputs().iter().map(|o| o.name().to_string()).collect(),
-        session: Mutex::new(session),
+        session: Mutex::new(Some(session)),
+        gpu: (provider == "directml").into(),
+        exclusive: args.exclusive,
+        path,
     });
     let id = {
         let mut v = ai.sessions.lock().unwrap();
@@ -394,28 +407,14 @@ fn encode(session: usize, outs: Vec<(TensorHead, Vec<u8>)>) -> Vec<u8> {
     out
 }
 
-fn run(ai: &Ai, body: &[u8]) -> Result<Vec<u8>, String> {
-    let (head, data) = parse(body)?;
-    let s = ai.sessions.lock().unwrap().get(head.session).cloned().ok_or("oturum yok")?;
-    // Önce saklı tensörleri topla (görünümleri bunlardan ödünç alınır)
-    let mut held: Vec<Option<Arc<DynValue>>> = Vec::with_capacity(head.tensors.len());
-    {
-        let stash = ai.stash.lock().unwrap();
-        for t in &head.tensors {
-            held.push(match t.reference {
-                Some(r) => Some(stash.get(&r).cloned().ok_or("saklı tensör bulunamadı")?),
-                None => None,
-            });
-        }
-    }
+fn exec(ai: &Ai, s: &Loaded, session: &mut Session, head: &Head, held: &[Option<Arc<DynValue>>], data: &[u8]) -> Result<Vec<u8>, String> {
     let mut inputs: Vec<(String, ort::session::SessionInputValue)> = Vec::with_capacity(head.tensors.len());
-    for (t, h) in head.tensors.iter().zip(&held) {
+    for (t, h) in head.tensors.iter().zip(held) {
         match h {
             Some(v) => inputs.push((t.name.clone(), v.view().into())),
             None => inputs.push((t.name.clone(), to_value(t, data)?.into())),
         }
     }
-    let mut session = s.session.lock().unwrap();
     let mut outputs = session.run(inputs).map_err(|e| e.to_string())?;
     let mut res = Vec::new();
     for name in &s.outputs {
@@ -434,6 +433,78 @@ fn run(ai: &Ai, body: &[u8]) -> Result<Vec<u8>, String> {
         }
     }
     Ok(encode(head.session, res))
+}
+
+/// DirectML'de ekran kartı belleği yetmedi mi (E_OUTOFMEMORY)
+fn is_oom(e: &str) -> bool {
+    e.contains("8007000E") || e.contains("bad allocation") || e.to_lowercase().contains("out of memory")
+}
+
+impl Ai {
+    /// Diğer GPU oturumlarını boşaltır (gerektiğinde yeniden açılırlar); CPU oturumları ekran kartı belleği tutmaz
+    fn evict_others(&self, keep: usize) {
+        self.evict(|i, l| i != keep && l.gpu.load(std::sync::atomic::Ordering::Relaxed));
+    }
+
+    fn evict(&self, which: impl Fn(usize, &Loaded) -> bool) {
+        let all = self.sessions.lock().unwrap().clone();
+        for (i, l) in all.iter().enumerate() {
+            if which(i, l) {
+                if let Ok(mut g) = l.session.try_lock() {
+                    *g = None;
+                }
+            }
+        }
+    }
+}
+
+fn run(ai: &Ai, body: &[u8]) -> Result<Vec<u8>, String> {
+    use std::sync::atomic::Ordering::Relaxed;
+    let (head, data) = parse(body)?;
+    let s = ai.sessions.lock().unwrap().get(head.session).cloned().ok_or("oturum yok")?;
+    // Önce saklı tensörleri topla (görünümleri bunlardan ödünç alınır)
+    let mut held: Vec<Option<Arc<DynValue>>> = Vec::with_capacity(head.tensors.len());
+    {
+        let stash = ai.stash.lock().unwrap();
+        for t in &head.tensors {
+            held.push(match t.reference {
+                Some(r) => Some(stash.get(&r).cloned().ok_or("saklı tensör bulunamadı")?),
+                None => None,
+            });
+        }
+    }
+    if s.gpu.load(Relaxed) {
+        if s.exclusive {
+            ai.evict_others(head.session);
+        } else {
+            ai.evict(|i, l| i != head.session && l.exclusive && l.gpu.load(Relaxed));
+        }
+    }
+    let t0 = Instant::now();
+    let mut guard = s.session.lock().unwrap();
+    // Bellek yetmezse: 1) diğer oturumları boşalt, 2) bu modeli CPU'da çalıştır
+    for attempt in 0.. {
+        if guard.is_none() {
+            *guard = Some(build(&s.path, s.gpu.load(Relaxed)).map_err(|e| e.to_string())?);
+        }
+        match exec(ai, &s, guard.as_mut().unwrap(), &head, &held, data) {
+            Ok(v) => {
+                if std::env::var_os("PAPERWELL_AI_LOG").is_some() {
+                    let name = s.path.file_name().unwrap_or_default().to_string_lossy();
+                    eprintln!("[ai] {name} {} {} ms", if s.gpu.load(Relaxed) { "gpu" } else { "cpu" }, t0.elapsed().as_millis());
+                }
+                return Ok(v);
+            }
+            Err(e) if is_oom(&e) && attempt == 0 => ai.evict_others(head.session),
+            Err(e) if is_oom(&e) && attempt == 1 && s.gpu.load(Relaxed) => {
+                s.gpu.store(false, Relaxed);
+                *guard = None;
+                ai.gpu_failed("Ekran kartı belleği yetmedi; bu model CPU'da çalışıyor".into());
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!()
 }
 
 /// Saklı tensörleri bırakır

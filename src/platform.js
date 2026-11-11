@@ -166,9 +166,9 @@ export async function nativeDownload(url, onProgress) {
 }
 
 /** @returns {Promise<{session:number, inputs:string[], outputs:string[], provider:string}>} */
-export async function nativeLoad(urls, gpu = true) {
+export async function nativeLoad(urls, { gpu = true, exclusive = false } = {}) {
     const { core } = await tauri();
-    return core.invoke('ai_load', { args: { urls, gpu } });
+    return core.invoke('ai_load', { args: { urls, gpu, exclusive } });
 }
 
 export async function nativeRun(session, feeds, keep = []) {

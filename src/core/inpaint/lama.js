@@ -10,7 +10,8 @@ export const isLamaCached = () => isCached([LAMA_URL]);
 
 export function loadLama(onProgress) {
     if (!loading) {
-        loading = openModel([{ url: LAMA_URL, bytes: LAMA_BYTES }], onProgress).catch((e) => { loading = null; throw e; });
+        // DirectML bu modelin FFT düğümlerini açamıyor (E_INVALIDARG): masaüstünde çok çekirdekli CPU
+        loading = openModel([{ url: LAMA_URL, bytes: LAMA_BYTES }], onProgress, { gpu: false }).catch((e) => { loading = null; throw e; });
     }
     return loading;
 }
