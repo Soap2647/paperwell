@@ -17,6 +17,7 @@ export const DEFAULT_OPTS = {
     shape: { kind: 'rect', stroke: '#e11d48', fill: '', width: 2, opacity: 1 },
     text: { family: 'sans', size: 14, color: '#111827', bold: false, italic: false, align: 'left' },
     erase: { size: 28, mode: 'fast' },
+    grab: { fill: 'ai' },
     redact: { fill: 'black' },
     note: { color: '#facc15' },
 };
@@ -39,6 +40,7 @@ const initialState = {
     forms: { values: {}, flatten: false }, // form alanı değerleri (ad → değer)
     search: null, // { query, results: [], index }
     pendingImage: null, // yerleştirilecek görsel/imza dataURL
+    grab: null, // Nesne aracı: { pageIndex, points: [{x,y,positive}], mask }
     loadId: 0,
 };
 
@@ -75,6 +77,7 @@ function reducer(s, a) {
                 editing: null,
                 selected: a.keepSelection ? s.selected : null,
                 redactions: a.redactions || s.redactions,
+                grab: null,
                 page: Math.min(s.page, doc.pages.length - 1),
             };
         }
@@ -132,6 +135,7 @@ function reducer(s, a) {
                 future: [snapshot(s), ...s.future].slice(0, MAX_HISTORY),
                 selected: null,
                 editing: null,
+                grab: null,
                 dirty: true,
                 page: Math.min(s.page, prev.doc.pages.length - 1),
             };
@@ -146,6 +150,7 @@ function reducer(s, a) {
                 future: s.future.slice(1),
                 selected: null,
                 editing: null,
+                grab: null,
                 dirty: true,
                 page: Math.min(s.page, next.doc.pages.length - 1),
             };
@@ -153,7 +158,7 @@ function reducer(s, a) {
         case 'SET':
             return { ...s, ...a.values };
         case 'SET_TOOL':
-            return { ...s, tool: a.tool, selected: null, editing: null, pendingImage: a.pendingImage ?? null };
+            return { ...s, tool: a.tool, selected: null, editing: null, grab: null, pendingImage: a.pendingImage ?? null };
         case 'SET_OPTS': {
             const opts = { ...s.opts, [a.tool]: { ...s.opts[a.tool], ...a.changes } };
             try { localStorage.setItem('paperwell.opts', JSON.stringify(opts)); } catch { /* yoksay */ }

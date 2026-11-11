@@ -1,4 +1,4 @@
-import { MousePointer2, TextCursorInput, Type, PenTool, Highlighter, Shapes, ImagePlus, Signature, Sparkles, SquareSlash, StickyNote } from 'lucide-react';
+import { MousePointer2, TextCursorInput, Type, PenTool, Highlighter, Shapes, ImagePlus, Signature, Sparkles, SquareSlash, StickyNote, LassoSelect } from 'lucide-react';
 
 export const TOOLS = [
     { id: 'select', label: 'Seç', hint: 'Nesneleri seç ve taşı', icon: MousePointer2, key: 'V' },
@@ -11,6 +11,7 @@ export const TOOLS = [
     { id: 'sign', label: 'İmza', hint: 'İmza ekle', icon: Signature, key: 'G' },
     { id: 'note', label: 'Not', hint: 'Yapışkan not ekle', icon: StickyNote, key: 'N' },
     { id: 'erase', label: 'Silgi', hint: 'Fırçayla boya, yok olsun', icon: Sparkles, key: 'B' },
+    { id: 'grab', label: 'Nesne', hint: 'Tıklanan nesneyi ayrı katmana çıkar', icon: LassoSelect, key: 'O' },
     { id: 'redact', label: 'Karart', hint: 'Hassas bilgiyi kalıcı sil', icon: SquareSlash, key: 'K' },
 ];
 

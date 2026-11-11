@@ -10,6 +10,8 @@ import { newId } from '../core/pageOps';
 import { getPageModel, searchDocument } from '../core/modelCache';
 import { redactRects, replaceImageContent, deleteImage } from '../core/pdf/editOps';
 import { isMiganCached, loadMigan } from '../core/inpaint/migan';
+import { isSamCached, loadSam } from '../core/segment';
+import { applyGrab, clearGrab } from './grabActions';
 import { FONT_FAMILIES } from '../core/fonts';
 import { documentHasForm } from '../core/forms';
 import { Button, ColorPicker, Field, Segmented, Slider, Toggle, cx } from '../components/ui';
@@ -262,6 +264,7 @@ function ToolPanel({ tool }) {
             {tool === 'sign' && <SignToolPanel />}
             {tool === 'note' && <Field label={t('Renk')}><ColorPicker value={opts.color} swatches={['#facc15', '#fb923c', '#4ade80', '#60a5fa', '#f472b6', '#c084fc']} onChange={(color) => set({ color })} /></Field>}
             {tool === 'erase' && <EraseToolPanel opts={opts} set={set} />}
+            {tool === 'grab' && <GrabToolPanel opts={opts} set={set} />}
             {tool === 'redact' && <RedactToolPanel opts={opts} set={set} />}
         </Section>
     );
@@ -370,6 +373,38 @@ function EraseToolPanel({ opts, set }) {
             </p>
             {opts.mode === 'ai' && cached === false && <Button icon={Download} onClick={download}>{t('Yapay zekâ modelini indir')}</Button>}
             {opts.mode === 'ai' && cached && <p className="text-xs text-success flex items-center gap-1.5"><Check className="w-3.5 h-3.5" />{t('Model hazır')}</p>}
+        </>
+    );
+}
+
+function GrabToolPanel({ opts, set }) {
+    const ed = useEditor();
+    const grab = ed.state.grab;
+    const [cached, setCached] = useState(null);
+    useEffect(() => { isSamCached().then(setCached); }, [grab]);
+    const download = () => withBusy(ed, t('Model indiriliyor'), async (progress) => {
+        await loadSam((p) => progress(p, `${t('Model indiriliyor')} ${Math.round(p * 100)}%`));
+        setCached(true);
+        toast(t('Model hazır'), 'success');
+    });
+    return (
+        <>
+            <p className="text-xs text-fg-3 leading-relaxed">{t('Nesnenin üzerine tıklayın. Shift ile nokta ekleyin, Alt ile istemediğiniz bölgeyi çıkarın. Onaylayınca nesne taşınabilir bir katman olur, arkası doldurulur.')}</p>
+            <Field label={t('Arkasını doldur')}>
+                <Segmented value={opts.fill} onChange={(fill) => set({ fill })} options={[{ value: 'fast', icon: Zap, label: t('Hızlı') }, { value: 'ai', icon: Sparkles, label: t('Yapay zekâ') }]} />
+            </Field>
+            {grab?.mask ? (
+                <div className="rounded-xl bg-surface-2 border border-line p-3 space-y-3">
+                    <div className="text-[13px]"><span className="font-semibold tabular-nums">{grab.points.length}</span> {t('nokta')} · {t('Sayfa')} {grab.pageIndex + 1}</div>
+                    <div className="flex gap-2">
+                        <Button variant="primary" className="flex-1" icon={Check} onClick={() => applyGrab(ed)}>{t('Katmana çıkar')}</Button>
+                        <Button onClick={() => clearGrab(ed)}>{t('Temizle')}</Button>
+                    </div>
+                    <p className="text-xs text-fg-3">Enter · Esc</p>
+                </div>
+            ) : null}
+            {cached === false && <Button icon={Download} onClick={download}>{t('Yapay zekâ modelini indir')} (~14 MB)</Button>}
+            {cached && <p className="text-xs text-success flex items-center gap-1.5"><Check className="w-3.5 h-3.5" />{t('Model hazır')}</p>}
         </>
     );
 }

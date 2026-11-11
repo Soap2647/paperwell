@@ -17,10 +17,11 @@ import { inpaintMigan } from './inpaint/migan';
  * @param {HTMLCanvasElement} p.mask - görünüm uzayında, ölçek p.maskScale; alfa>0 = silinecek
  * @param {number} p.maskScale
  * @param {'fast'|'ai'} p.mode
+ * @param {number} [p.grow] - maskeyi ek olarak genişlet (görünüm birimi)
  * @param {(stage:string, progress?:number) => void} [p.onProgress]
  * @returns {Promise<Uint8Array|null>}
  */
-export async function magicErase({ bytes, pageIndex, mask, maskScale, mode = 'fast', onProgress }) {
+export async function magicErase({ bytes, pageIndex, mask, maskScale, mode = 'fast', grow = 0, onProgress }) {
     const mctx = mask.getContext('2d', { willReadFrequently: true });
     const md = mctx.getImageData(0, 0, mask.width, mask.height).data;
 
@@ -54,7 +55,7 @@ export async function magicErase({ bytes, pageIndex, mask, maskScale, mode = 'fa
 
     // 2) Bölgeyi render et (kenarlardan bağlam payı ile)
     const vx0 = minX / maskScale, vy0 = minY / maskScale, vx1 = (maxX + 1) / maskScale, vy1 = (maxY + 1) / maskScale;
-    const pad = Math.max(12, Math.max(vx1 - vx0, vy1 - vy0) * (mode === 'ai' ? 0.6 : 0.15));
+    const pad = Math.max(12, Math.max(vx1 - vx0, vy1 - vy0) * (mode === 'ai' ? 0.6 : 0.15)) + grow;
     const rect = {
         x: Math.max(0, vx0 - pad),
         y: Math.max(0, vy0 - pad),
@@ -78,7 +79,7 @@ export async function magicErase({ bytes, pageIndex, mask, maskScale, mode = 'fa
             if (maskAt(rect.x + (x + 0.5) / scale, rect.y + (y + 0.5) / scale)) hole[y * W + x] = 1;
         }
     }
-    const grown = dilate(hole, W, H, Math.max(2, Math.round(scale * 1.5)));
+    const grown = dilate(hole, W, H, Math.max(2, Math.round(scale * 1.5)) + Math.round(grow * scale));
 
     onProgress?.('inpaint', 0);
     if (mode === 'ai') {

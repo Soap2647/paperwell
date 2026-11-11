@@ -101,6 +101,13 @@ const EN = {
     'Bu sayfada düzenlenebilir metin yok (taranmış olabilir). Akıllı silgi ve Metin aracını kullanın.': 'No editable text on this page (it may be scanned). Use the magic eraser and the Text tool.',
     'Döndürülmüş metin henüz yerinde düzenlenemiyor; Akıllı silgi ve Metin aracını kullanın.': 'Rotated text cannot be edited in place yet; use the magic eraser and the Text tool.',
     'Kaldır': 'Remove',
+    // Nesne aracı (Magic Grab)
+    'Nesne': 'Object', 'Tıklanan nesneyi ayrı katmana çıkar': 'Lift the clicked object onto its own layer',
+    'Nesnenin üzerine tıklayın. Shift ile nokta ekleyin, Alt ile istemediğiniz bölgeyi çıkarın. Onaylayınca nesne taşınabilir bir katman olur, arkası doldurulur.': 'Click an object. Shift-click to add points, Alt-click to exclude areas. When you confirm, the object becomes a movable layer and the space behind it is filled.',
+    'Arkasını doldur': 'Fill behind', 'nokta': 'points', 'Katmana çıkar': 'Lift to layer',
+    'Nesne seçimi için yapay zekâ modeli indirilecek. Bir kez iner, sonra çevrimdışı çalışır.': 'An AI model will be downloaded for object selection. It downloads once, then works offline.',
+    'Görsel analiz ediliyor...': 'Analyzing image...', 'Nesne katmana çıkarılıyor...': 'Lifting object to a layer...',
+    'Nesne bulunamadı': 'No object found', 'Nesne ayrı katmana çıkarıldı': 'Object lifted to its own layer',
 };
 
 let locale = (() => {

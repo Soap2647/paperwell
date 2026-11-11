@@ -1,62 +1,23 @@
 // MI-GAN (Picsart AI Research) ile tarayıcıda yapay zekâ destekli onarma.
 // Model ilk kullanımda indirilir (~28 MB) ve tarayıcı önbelleğinde saklanır. Görseller cihazdan çıkmaz.
 
+import { fetchModel, isModelCached, getOrt, createSession } from '../modelStore';
+
 export const MIGAN_URL = 'https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx';
-const CACHE_NAME = 'paperwell-models-v1';
 const SIZE = 512;
 
 let sessionPromise = null;
 
-async function fetchWithProgress(url, onProgress) {
-    let cache = null;
-    try { cache = await caches.open(CACHE_NAME); } catch { /* önbellek yok */ }
-    const cached = cache && (await cache.match(url));
-    if (cached) {
-        onProgress?.(1);
-        return new Uint8Array(await cached.arrayBuffer());
-    }
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Model indirilemedi (${res.status})`);
-    const total = Number(res.headers.get('content-length')) || 28e6;
-    const reader = res.body.getReader();
-    const chunks = [];
-    let loaded = 0;
-    for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        loaded += value.length;
-        onProgress?.(Math.min(0.99, loaded / total));
-    }
-    const out = new Uint8Array(loaded);
-    let off = 0;
-    for (const c of chunks) { out.set(c, off); off += c.length; }
-    try { await cache?.put(url, new Response(out, { headers: { 'content-type': 'application/octet-stream' } })); } catch { /* kota */ }
-    onProgress?.(1);
-    return out;
-}
-
-export async function isMiganCached() {
-    try {
-        const cache = await caches.open(CACHE_NAME);
-        return !!(await cache.match(MIGAN_URL));
-    } catch { return false; }
+export function isMiganCached() {
+    return isModelCached(MIGAN_URL);
 }
 
 export function loadMigan(onProgress) {
     if (!sessionPromise) {
         sessionPromise = (async () => {
-            const ort = await import('onnxruntime-web');
-            ort.env.wasm.proxy = true; // arayüz donmasın diye worker'da çalış
-            const model = await fetchWithProgress(MIGAN_URL, onProgress);
-            const providers = typeof navigator !== 'undefined' && navigator.gpu ? ['webgpu', 'wasm'] : ['wasm'];
-            let session;
-            try {
-                session = await ort.InferenceSession.create(model, { executionProviders: providers });
-            } catch {
-                session = await ort.InferenceSession.create(model, { executionProviders: ['wasm'] });
-            }
-            return { ort, session };
+            const ort = await getOrt();
+            const model = await fetchModel(MIGAN_URL, onProgress, 28e6);
+            return { ort, session: await createSession(model) };
         })().catch((e) => {
             sessionPromise = null;
             throw e;
