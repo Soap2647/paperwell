@@ -81,7 +81,7 @@ const EN = {
     'Değiştirildi': 'Replaced',
     'Bu sayfada düzenlenebilir metin yok (taranmış olabilir). Akıllı silgi ve Metin aracını kullanın.': 'No editable text on this page (it may be scanned). Use the magic eraser and the Text tool.',
     'Döndürülmüş metin henüz yerinde düzenlenemiyor; Akıllı silgi ve Metin aracını kullanın.': 'Rotated text cannot be edited in place yet; use the magic eraser and the Text tool.',
-    'Özellikler': 'Properties', 'Kaldır': 'Remove',
+    'Kaldır': 'Remove',
 };
 
 let locale = (() => {
