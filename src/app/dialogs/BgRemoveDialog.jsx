@@ -6,7 +6,7 @@ import { useEditor, findObject } from '../../store/editor';
 import { withBusy } from '../../store/actions';
 import { readPages, rebuildPages } from '../../core/pageOps';
 import { renderPageToCanvas } from '../../core/render';
-import { BG_MODELS, isBgModelCached, predictAlpha, composite } from '../../core/bgremove';
+import { BG_MODELS, PRECISE_BYTES, isBgModelCached, isPreciseCached, predictAlpha, predictAlphaPrecise, composite } from '../../core/bgremove';
 import { Button, ColorPicker, Dialog, Field, Segmented, Slider, Spinner } from '../../components/ui';
 import { toast } from '../../components/Toaster';
 import { t } from '../../i18n';
@@ -45,7 +45,7 @@ function scaleAlpha(alpha, w, h, tw, th) {
 export default function BgRemoveDialog({ open, onClose }) {
     const ed = useEditor();
     const objectId = ed.state.bgTarget || null;
-    const [quality, setQuality] = useState('fast');
+    const [quality, setQuality] = useState('precise');
     const [bg, setBg] = useState({ mode: 'transparent', color: '#ffffff', blur: 12 });
     const [cached, setCached] = useState({});
     const [result, setResult] = useState(null); // { source, alpha, quality }
@@ -55,7 +55,7 @@ export default function BgRemoveDialog({ open, onClose }) {
 
     useEffect(() => {
         if (!open) return;
-        Promise.all(Object.keys(BG_MODELS).map(async (q) => [q, await isBgModelCached(q)])).then((r) => setCached(Object.fromEntries(r)));
+        Promise.all([isBgModelCached('fast'), isPreciseCached()]).then(([fast, precise]) => setCached({ fast, precise }));
     }, [open]);
 
     // Kapanınca sıfırla
@@ -65,7 +65,8 @@ export default function BgRemoveDialog({ open, onClose }) {
         setRunning(true);
         try {
             const source = await loadSource(ed.get(), objectId);
-            const alpha = await predictAlpha(source, q, (p) => setProgress(p < 1 ? p : null));
+            const onP = (p) => setProgress(p < 1 ? p : null);
+            const alpha = q === 'precise' ? await predictAlphaPrecise(source, onP) : await predictAlpha(source, 'fast', onP);
             setCached((c) => ({ ...c, [q]: true }));
             setResult({ source, alpha, quality: q });
         } catch (e) {
@@ -125,7 +126,7 @@ export default function BgRemoveDialog({ open, onClose }) {
         });
     };
 
-    const mb = (q) => Math.round(BG_MODELS[q].bytes / 1e6);
+    const mb = (q) => Math.round((q === 'precise' ? PRECISE_BYTES : BG_MODELS.fast.bytes) / 1e6);
     const needsDownload = !cached[quality] && !result;
 
     return (
@@ -148,8 +149,8 @@ export default function BgRemoveDialog({ open, onClose }) {
                     ) : null}
                 </div>
                 <div className="space-y-4">
-                    <Field label={t('Model')} hint={quality === 'fast' ? t('Hızlı, küçük model; çoğu fotoğraf için yeterli.') : t('Saç ve ince kenarlarda daha iyi; daha yavaş.')}>
-                        <Segmented value={quality} onChange={setQuality} options={[{ value: 'fast', icon: Zap, label: t('Hızlı') }, { value: 'quality', icon: Sparkles, label: t('Kaliteli') }]} />
+                    <Field label={t('Model')} hint={quality === 'fast' ? t('Hızlı, küçük model; çoğu fotoğraf için yeterli.') : t('Nesne kenarlarını SAM 2 ile keskinleştirir; daha doğru, biraz daha yavaş.')}>
+                        <Segmented value={quality} onChange={setQuality} options={[{ value: 'fast', icon: Zap, label: t('Hızlı') }, { value: 'precise', icon: Sparkles, label: t('Hassas') }]} />
                     </Field>
                     <Field label={t('Arka plan')}>
                         <Segmented value={bg.mode} onChange={(mode) => setBg((b) => ({ ...b, mode }))} options={[{ value: 'transparent', label: t('Şeffaf') }, { value: 'color', label: t('Renk') }, { value: 'blur', label: t('Bulanık') }]} />

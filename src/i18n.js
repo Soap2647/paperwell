@@ -112,9 +112,9 @@ const EN = {
     'Arka planı kaldır': 'Remove background', 'Arka plan kaldırıldı': 'Background removed',
     'Yapay zekâ ana nesneyi ayırır. Tamamen cihazınızda çalışır.': 'AI separates the main subject. Runs entirely on your device.',
     'Arka plan ayrılıyor...': 'Separating background...', 'Model bir kez indirilir, sonra çevrimdışı çalışır.': 'The model downloads once, then works offline.',
-    'Modeli indir ve çalıştır': 'Download model and run', 'Model': 'Model', 'Kaliteli': 'Quality',
+    'Modeli indir ve çalıştır': 'Download model and run', 'Model': 'Model',
     'Hızlı, küçük model; çoğu fotoğraf için yeterli.': 'Small, fast model; good enough for most photos.',
-    'Saç ve ince kenarlarda daha iyi; daha yavaş.': 'Better on hair and fine edges; slower.',
+    'Nesne kenarlarını SAM 2 ile keskinleştirir; daha doğru, biraz daha yavaş.': 'Sharpens object edges with SAM 2; more accurate, a bit slower.', 'Hassas': 'Precise',
     'Arka plan': 'Background', 'Şeffaf': 'Transparent', 'Bulanık': 'Blurred', 'Bulanıklık': 'Blur',
     'Şeffaf sonuç PNG olarak indirilir.': 'A transparent result downloads as PNG.',
     // Belge tarayıcı

@@ -12,7 +12,7 @@
 | **Akıllı silgi** | Fırçayla boyayın, bırakın, silinsin. *Hızlı* mod (Telea onarma) belgeler ve düz arka planlar için anında ve çevrimdışı çalışır. *Yapay zekâ* modu [MI-GAN](https://github.com/Picsart-AI-Research/MI-GAN) modelini (~28 MB, bir kez) indirip fotoğraflarda nesne siler. Altındaki metin de dosyadan gerçekten kaldırılır. |
 | **Sihirli Katmanlar** | Düz bir afişi tek tıkla katmanlara ayırır: her yazı satırı **düzenlenebilir metin katmanı** olur (renk, boyut, açı korunur, en yakın font seçilir; [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) algılama + tanıma, Türkçe harfler Tesseract ile doğrulanır), logo, ikon, kavis, şekil ve top gibi nesneler [SAM 2](https://github.com/facebookresearch/sam2) ile ayrı görsel katmanı olur, kalan arka plan [LaMa](https://github.com/advimman/lama) / MI-GAN ile doldurulur. Modeller (hepsi Apache-2.0, toplam ~195 MB) ilk kullanımda onayla iner. Katmanlar panelinde sırala, gizle, kilitle. |
 | **Nesneyi katmana çıkar** | *Nesne* aracıyla fotoğraftaki bir nesneye tıklayın (Shift: nokta ekle, Alt: bölge çıkar); [SlimSAM](https://huggingface.co/Xenova/slimsam-77-uniform) (Segment Anything, Apache-2.0, ~14 MB, bir kez iner) maskeyi çıkarır, onaylayınca nesne şeffaf PNG katmanı olur ve arkası akıllı silgiyle doldurulur. Sonra Seç aracıyla taşıyın, boyutlandırın, silin. |
-| **Arka planı kaldır** | Görsel belgede ya da seçili görsel nesnesinde (ör. imza fotoğrafı) tek tıkla: şeffaf, düz renk ya da bulanık arka plan. *Hızlı* model [U²-Netp](https://github.com/xuebinqin/U-2-Net) (Apache-2.0, ~5 MB), *Kaliteli* model [IS-Net/DIS](https://github.com/xuebinqin/DIS) (Apache-2.0, ~179 MB); ilk kullanımda onayla iner. Şeffaf sonuç PNG olarak indirilir. |
+| **Arka planı kaldır** | Görsel belgede ya da seçili görsel nesnesinde (ör. imza fotoğrafı) tek tıkla: şeffaf, düz renk ya da bulanık arka plan. *Hızlı* mod [U²-Netp](https://github.com/xuebinqin/U-2-Net) (Apache-2.0, ~5 MB); *Hassas* mod nesneyi U²-Netp ile bulup [SAM 2](https://github.com/facebookresearch/sam2) ile keskinleştirir (+~62 MB). Şeffaf sonuç PNG olarak indirilir. |
 | **Gerçek karartma** | Karartılan alandaki metin yalnızca örtülmez, **içerik akışından silinir**; kopyalanamaz, aranamaz. Metin arayıp tüm geçişleri tek seferde işaretleyebilirsiniz (IBAN, TC no...). |
 | **OCR** | Taranmış belgeleri Tesseract ile (Türkçe + İngilizce) tanır: *aranabilir* yapar (görünmez metin katmanı) ya da *düzenlenebilir* yapar (taranmış yazı gerçek metne dönüşür). Motor ve dil verisi uygulamayla gelir, internet gerekmez. |
 | **Belge tarayıcı** | Telefonla çekilmiş belge fotoğraflarını tarayın: köşeler otomatik bulunur (sürükleyip düzeltebilirsiniz), perspektif düzeltilir, gölge temizlenir; *Orijinal / Renkli / Gri / Siyah-beyaz* görünüm ve kontrast. Birden çok fotoğraf tek A4 PDF olur, istenirse OCR ile aranabilir yapılır. Model gerekmez, tamamen yerel. |
@@ -68,7 +68,7 @@ src/core/eraser.js   akıllı silgi hattı
 src/core/segment.js  SlimSAM nesne maskesi; grab.js nesneyi katmana çıkarma
 src/core/magicLayers.js  Sihirli Katmanlar (textDetect.js PaddleOCR, segment2.js SAM 2, inpaint/lama.js)
 src/core/modelStore.js  model indirme / Cache Storage / ONNX oturumları
-src/core/bgremove.js arka plan kaldırma (U²-Netp / IS-Net)
+src/core/bgremove.js arka plan kaldırma (U²-Netp, SAM 2 ile hassas mod)
 src/core/scanner.js  belge tarayıcı: köşe algılama (eşik + bölge büyütme + Hough), perspektif, filtreler
 src/core/export.js   katman nesnelerinin vektör olarak gömülmesi
 src/core/ocr.js      Tesseract.js ile OCR (aranabilir / düzenlenebilir)
@@ -80,7 +80,7 @@ src/app/             arayüz (React + Tailwind)
 src/store/           durum ve belge eylemleri
 ```
 
-Kullanılan açık kaynak projeler: [pdf.js](https://github.com/mozilla/pdf.js) (render), [pdf-lib](https://github.com/Hopding/pdf-lib) (yazma), [ONNX Runtime Web](https://github.com/microsoft/onnxruntime), [Tesseract.js](https://github.com/naptha/tesseract.js), [Tauri](https://tauri.app), [MI-GAN](https://github.com/Picsart-AI-Research/MI-GAN), [SlimSAM](https://github.com/czg1225/SlimSAM) / [Segment Anything](https://github.com/facebookresearch/segment-anything), [U²-Net](https://github.com/xuebinqin/U-2-Net), [DIS / IS-Net](https://github.com/xuebinqin/DIS), [docx](https://github.com/dolanmiu/docx), [lucide](https://lucide.dev). Fontlar: Liberation Sans (OFL), DejaVu Serif / Sans Mono (Bitstream Vera lisansı).
+Kullanılan açık kaynak projeler: [pdf.js](https://github.com/mozilla/pdf.js) (render), [pdf-lib](https://github.com/Hopding/pdf-lib) (yazma), [ONNX Runtime Web](https://github.com/microsoft/onnxruntime), [Tesseract.js](https://github.com/naptha/tesseract.js), [Tauri](https://tauri.app), [MI-GAN](https://github.com/Picsart-AI-Research/MI-GAN), [SlimSAM](https://github.com/czg1225/SlimSAM) / [Segment Anything](https://github.com/facebookresearch/segment-anything), [U²-Net](https://github.com/xuebinqin/U-2-Net), [docx](https://github.com/dolanmiu/docx), [lucide](https://lucide.dev). Fontlar: Liberation Sans (OFL), DejaVu Serif / Sans Mono (Bitstream Vera lisansı).
 
 ## Bilinen sınırlar
 

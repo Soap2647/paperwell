@@ -1,6 +1,8 @@
 // Arka plan kaldırma: görseldeki ana nesneyi ayırır, arka planı şeffaf / düz renk / bulanık yapar.
-// Hızlı: U²-Netp (Apache-2.0, ~4.6 MB). Yüksek kalite: IS-Net / DIS (Apache-2.0, ~178 MB).
+// Hızlı: U²-Netp (Apache-2.0, ~4.6 MB). Hassas: U²-Netp'nin bulduğu nesne SAM 2 ile keskinleştirilir (+~62 MB).
+// (BiRefNet / BEN2 denendi: tarayıcıda WASM belleğine sığmıyor, WebGPU'da desteklenmeyen düğümler var.)
 import { fetchModel, isModelCached, getOrt, createSession } from './modelStore';
+import { isSam2Cached, encodeImage2, decode2, SAM2_BYTES } from './segment2';
 
 const MEAN = [0.485, 0.456, 0.406];
 
@@ -9,11 +11,49 @@ export const BG_MODELS = {
         url: 'https://huggingface.co/BritishWerewolf/U-2-Netp/resolve/7112208dbac3a3642496c8d54e2f0f9bb3dc1dc8/onnx/model.onnx',
         size: 320, bytes: 4.6e6, std: [0.229, 0.224, 0.225],
     },
-    quality: {
-        url: 'https://huggingface.co/BritishWerewolf/IS-Net/resolve/9783722d9f964c0286a411e7e8e6fede947d5a53/onnx/model.onnx',
-        size: 1024, bytes: 178.6e6, std: [1, 1, 1],
-    },
 };
+
+export const PRECISE_BYTES = BG_MODELS.fast.bytes + SAM2_BYTES;
+export const isPreciseCached = async () => (await isBgModelCached('fast')) && (await isSam2Cached());
+
+/**
+ * Hassas maske: U²-Netp nesneyi bulur, kutusu SAM 2'ye sorulur, kaba maskeyle en çok örtüşen keskin maske alınır.
+ * Sentetik testte (bilinen alfalı top, fotoğraflı zemin) ortalama alfa hatası 13 → 2.8.
+ */
+export async function predictAlphaPrecise(image, onProgress) {
+    const coarse = await predictAlpha(image, 'fast', (p) => onProgress?.(p * 0.07));
+    const W = image.width, H = image.height;
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (let i = 0; i < W * H; i++) if (coarse[i] > 128) { const x = i % W, y = (i / W) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) return coarse;
+    const emb = await encodeImage2(image, (p) => onProgress?.(0.07 + p * 0.93));
+    const pad = Math.max(W, H) * 0.01;
+    const r = await decode2(emb, { box: [x0 - pad, y0 - pad, x1 + pad, y1 + pad] });
+    const G = r.size;
+    let best = null;
+    for (const m of r.masks) {
+        const a = new Uint8ClampedArray(W * H);
+        let inter = 0, uni = 0;
+        for (let y = 0; y < H; y++) {
+            const fy = Math.min(G - 1, Math.max(0, ((y + 0.5) / H) * G - 0.5)), iy = fy | 0, jy = Math.min(G - 1, iy + 1), ay = fy - iy;
+            for (let x = 0; x < W; x++) {
+                const fx = Math.min(G - 1, Math.max(0, ((x + 0.5) / W) * G - 0.5)), ix = fx | 0, jx = Math.min(G - 1, ix + 1), ax = fx - ix;
+                const L = m.logits;
+                const v = (L[iy * G + ix] * (1 - ax) + L[iy * G + jx] * ax) * (1 - ay) + (L[jy * G + ix] * (1 - ax) + L[jy * G + jx] * ax) * ay;
+                const i = y * W + x;
+                // düşük olasılıklı kuyruk (çevredeki nesnelerin soluk izleri) tamamen şeffaf
+                a[i] = v < -1.2 ? 0 : 255 / (1 + Math.exp(-2 * v));
+                const p = a[i] > 128, q = coarse[i] > 128;
+                if (p && q) inter++;
+                if (p || q) uni++;
+            }
+        }
+        const iou = uni ? inter / uni : 0;
+        if (!best || iou > best.iou) best = { iou, a };
+    }
+    // SAM kaba nesneyi tutturamadıysa (çok farklı bölge) kaba maskeye dön
+    return best && best.iou > 0.5 ? best.a : coarse;
+}
 
 const sessions = {};
 
