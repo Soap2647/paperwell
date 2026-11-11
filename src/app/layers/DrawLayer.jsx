@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useEditor } from '../../store/editor';
 import { newId } from '../../core/pageOps';
-import { eventToPage, pointsToPath, simplify } from '../objects';
+import { eventToPage, pointsToPath, simplify, capture } from '../objects';
 
 export default function DrawLayer({ page, zoom }) {
     const { state, dispatch } = useEditor();
@@ -13,7 +13,7 @@ export default function DrawLayer({ page, zoom }) {
 
     const down = (e) => {
         if (e.button !== 0) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
+        capture(e);
         setPts([eventToPage(e, ref.current, zoom)]);
     };
     const move = (e) => {

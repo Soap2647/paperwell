@@ -2,8 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor } from '../../store/editor';
 import { commitBytes, withBusy } from '../../store/actions';
-import { getPageModel, lineViewRect } from '../../core/modelCache';
-import { getPdfjsDoc } from '../../core/render';
+import { useEditModel } from './useEditModel';
 import { replaceLineText, transformImage, deleteImage } from '../../core/pdf/editOps';
 import { mul } from '../../core/pdf/geometry';
 import { FONT_FAMILIES } from '../../core/fonts';
@@ -13,48 +12,9 @@ import { t } from '../../i18n';
 
 const rgbHex = (c) => '#' + c.map((v) => Math.round(Math.max(0, Math.min(1, v)) * 255).toString(16).padStart(2, '0')).join('');
 
-function pdfBoxToView(geom, b) {
-    const pts = [[b.x0, b.y0], [b.x1, b.y1], [b.x0, b.y1], [b.x1, b.y0]].map(([x, y]) => geom.viewPoint(x, y));
-    const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
-    return { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) };
-}
-
 function viewRectToPdf(geom, r) {
     const a = geom.pdfPoint(r.x, r.y), b = geom.pdfPoint(r.x + r.w, r.y + r.h);
     return { x0: Math.min(a[0], b[0]), y0: Math.min(a[1], b[1]), x1: Math.max(a[0], b[0]), y1: Math.max(a[1], b[1]) };
-}
-
-export function useEditModel(bytes, index) {
-    const [data, setData] = useState(null);
-    useEffect(() => {
-        let alive = true;
-        (async () => {
-            const model = await getPageModel(bytes, index);
-            if (!model || !alive) { setData(model ? null : { empty: true }); return; }
-            // pdf.js'in yüklediği gömülü fontların CSS adlarını eşle (düzenleyicide aynı fontu göstermek için)
-            const fontByLine = {};
-            try {
-                const pdf = await getPdfjsDoc(bytes);
-                const p = await pdf.getPage(index + 1);
-                const tc = await p.getTextContent();
-                for (const line of model.lines) {
-                    let best = null, bd = Infinity;
-                    for (const it of tc.items) {
-                        if (!it.str) continue;
-                        const d = Math.hypot(it.transform[4] - line.origin[0], it.transform[5] - line.origin[1]);
-                        if (d < bd) { bd = d; best = it; }
-                    }
-                    if (best && bd < line.fontSize * 2) fontByLine[line.id] = best.fontName;
-                }
-            } catch { /* yalnız görünüm */ }
-            if (!alive) return;
-            const lines = model.lines.filter((l) => !l.invisible).map((l) => ({ line: l, rect: lineViewRect(model.geom, l), pdfFont: fontByLine[l.id] }));
-            const images = model.images.map((img) => ({ img, rect: pdfBoxToView(model.geom, img.box) })).filter((i) => i.rect.w > 4 && i.rect.h > 4);
-            setData({ model, lines, images });
-        })();
-        return () => { alive = false; };
-    }, [bytes, index]);
-    return data;
 }
 
 export default function EditLayer({ index, zoom }) {
@@ -68,7 +28,7 @@ export default function EditLayer({ index, zoom }) {
         return (
             <div className="absolute inset-x-0 top-3 flex justify-center pointer-events-none" style={{ transform: `scale(${1 / zoom})`, transformOrigin: 'top center' }}>
                 <span className="px-3 py-1.5 rounded-full bg-surface border border-line shadow-pop text-xs text-fg-2">
-                    Bu sayfada düzenlenebilir metin yok (taranmış olabilir) · Akıllı silgi ve Metin aracını kullanın
+                    {t('Bu sayfada düzenlenebilir metin yok (taranmış olabilir). Akıllı silgi ve Metin aracını kullanın.')}
                 </span>
             </div>
         );
@@ -80,7 +40,7 @@ export default function EditLayer({ index, zoom }) {
         const [x0, y0] = g.viewPoint(T[4], T[5]);
         const [x1, y1] = g.viewPoint(T[4] + T[0], T[5] + T[1]);
         if (Math.abs(Math.atan2(y1 - y0, x1 - x0)) > 0.02) {
-            toast('Döndürülmüş metin henüz yerinde düzenlenemiyor; Akıllı silgi + Metin aracını kullanın.', 'info');
+            toast(t('Döndürülmüş metin henüz yerinde düzenlenemiyor; Akıllı silgi ve Metin aracını kullanın.'), 'info');
             return;
         }
         dispatch({

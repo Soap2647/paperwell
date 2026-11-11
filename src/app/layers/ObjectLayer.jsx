@@ -159,6 +159,8 @@ function TextObject({ o, editing, interactive, onPointerDown, onDoubleClick }) {
     useEffect(() => {
         if (!editing || !ref.current) return;
         const el = ref.current;
+        // Düzenleme elemanı React tarafından yönetilmez; içeriği burada verilir
+        el.textContent = o.text || '';
         el.focus();
         const range = document.createRange();
         range.selectNodeContents(el);
@@ -176,6 +178,7 @@ function TextObject({ o, editing, interactive, onPointerDown, onDoubleClick }) {
 
     return (
         <div
+            key={editing ? 'edit' : 'view'}
             ref={ref}
             className="absolute outline-none"
             style={{
@@ -199,7 +202,7 @@ function TextObject({ o, editing, interactive, onPointerDown, onDoubleClick }) {
                 if (e.key === 'Escape') { e.preventDefault(); ref.current.blur(); }
             } : undefined}
         >
-            {o.text}
+            {editing ? null : o.text}
         </div>
     );
 }

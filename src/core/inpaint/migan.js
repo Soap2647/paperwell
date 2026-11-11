@@ -1,8 +1,7 @@
-// MI-GAN (Picsart AI Research, MIT lisansı) ile tarayıcıda yapay zekâ destekli onarma.
+// MI-GAN (Picsart AI Research) ile tarayıcıda yapay zekâ destekli onarma.
 // Model ilk kullanımda indirilir (~28 MB) ve tarayıcı önbelleğinde saklanır. Görseller cihazdan çıkmaz.
 
 export const MIGAN_URL = 'https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx';
-const ORT_VERSION = '1.31.1';
 const CACHE_NAME = 'nebula-models-v1';
 const SIZE = 512;
 
@@ -48,7 +47,6 @@ export function loadMigan(onProgress) {
     if (!sessionPromise) {
         sessionPromise = (async () => {
             const ort = await import('onnxruntime-web');
-            ort.env.wasm.wasmPaths = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
             ort.env.wasm.proxy = true; // arayüz donmasın diye worker'da çalış
             const model = await fetchWithProgress(MIGAN_URL, onProgress);
             const providers = typeof navigator !== 'undefined' && navigator.gpu ? ['webgpu', 'wasm'] : ['wasm'];

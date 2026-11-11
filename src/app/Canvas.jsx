@@ -16,7 +16,7 @@ export default function Canvas() {
     const fit = useCallback((mode = 'width') => {
         const el = scrollRef.current;
         const s = get();
-        if (!el || !s.doc) return;
+        if (!el || !s.doc || el.clientWidth < 80) return;
         const maxW = Math.max(...s.doc.pages.map((p) => p.width));
         const p0 = s.doc.pages[s.page] || s.doc.pages[0];
         const zw = (el.clientWidth - PAD * 2) / maxW;

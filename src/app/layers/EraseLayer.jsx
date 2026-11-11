@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../../store/editor';
 import { commitBytes, withBusy } from '../../store/actions';
 import { magicErase } from '../../core/eraser';
-import { eventToPage } from '../objects';
+import { eventToPage, capture } from '../objects';
 import { toast } from '../../components/Toaster';
 import { t } from '../../i18n';
 
@@ -39,7 +39,7 @@ export default function EraseLayer({ page, index, zoom }) {
 
     const down = (e) => {
         if (e.button !== 0 || working) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
+        capture(e);
         const p = eventToPage(e, ref.current, zoom);
         painting.current = p;
         paint(p, p);

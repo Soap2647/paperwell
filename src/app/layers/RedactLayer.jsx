@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useEditor } from '../../store/editor';
-import { eventToPage } from '../objects';
+import { eventToPage, capture } from '../objects';
 
 export default function RedactLayer({ page, zoom, interactive }) {
     const { state, dispatch } = useEditor();
@@ -12,7 +12,7 @@ export default function RedactLayer({ page, zoom, interactive }) {
 
     const down = (e) => {
         if (!interactive || e.button !== 0) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
+        capture(e);
         const p = eventToPage(e, ref.current, zoom);
         setD({ a: p, b: p });
     };

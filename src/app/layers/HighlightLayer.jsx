@@ -3,8 +3,8 @@
 import { useMemo, useRef, useState } from 'react';
 import { useEditor } from '../../store/editor';
 import { newId } from '../../core/pageOps';
-import { eventToPage } from '../objects';
-import { useEditModel } from './EditLayer';
+import { eventToPage, capture } from '../objects';
+import { useEditModel } from './useEditModel';
 
 function glyphView(geom, g) {
     const pts = [[g.box.x0, g.box.y0], [g.box.x1, g.box.y1]].map(([x, y]) => geom.viewPoint(x, y));
@@ -60,7 +60,7 @@ export default function HighlightLayer({ page, index, zoom }) {
 
     const down = (e) => {
         if (e.button !== 0) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
+        capture(e);
         const [x, y] = eventToPage(e, ref.current, zoom);
         const n = nearest(x, y);
         if (n.i >= 0 && n.d < 14) setSel({ start: n.i, end: n.i });

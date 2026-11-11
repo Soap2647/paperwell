@@ -1,7 +1,6 @@
 // Belge araçları: filigran, sayfa numarası, sıkıştırma, bölme, birleştirme, görsel/Word dışa aktarma.
 import { PDFDocument, rgb, degrees } from 'pdf-lib';
 import JSZip from 'jszip';
-import { Document, Packer, Paragraph, TextRun, PageBreak } from 'docx';
 import { embedFallbackFont } from './fonts';
 import { getPdfjsDoc, renderPageToCanvas } from './render';
 import { getPageModel } from './modelCache';
@@ -132,6 +131,7 @@ export async function exportImages(bytes, pageIndices, { format = 'png', scale =
 
 /** Metin satırlarını yazı tipi, boyut, kalın/italik ve renkleriyle Word'e aktarır */
 export async function exportDocx(bytes, pageCount, onProgress) {
+    const { Document, Packer, Paragraph, TextRun, PageBreak } = await import('docx');
     const children = [];
     for (let i = 0; i < pageCount; i++) {
         onProgress?.(i / pageCount);

@@ -43,7 +43,8 @@ export async function renderRegion(bytes, pageIndex, rect, scale) {
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    await page.render({ canvasContext: ctx, viewport }).promise;
+    // 'print' amacı requestAnimationFrame kullanmaz: sekme arka plandayken de tamamlanır
+    await page.render({ canvasContext: ctx, viewport, intent: 'print' }).promise;
     return canvas;
 }
 
@@ -59,7 +60,8 @@ export async function renderPageToCanvas(bytes, pageIndex, scale, background = '
         ctx.fillStyle = background;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
-    await page.render({ canvasContext: ctx, viewport }).promise;
+    // 'print' amacı requestAnimationFrame kullanmaz: sekme arka plandayken de tamamlanır
+    await page.render({ canvasContext: ctx, viewport, intent: 'print' }).promise;
     return canvas;
 }
 

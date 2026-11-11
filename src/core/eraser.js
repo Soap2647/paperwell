@@ -8,6 +8,7 @@ import { pageBox, pageRotation } from './pdf/pageModel';
 import { viewBoxToPdf } from './pdf/placement';
 import { renderRegion } from './render';
 import { inpaintTelea } from './inpaint/telea';
+import { inpaintMigan } from './inpaint/migan';
 
 /**
  * @param {Object} p
@@ -81,7 +82,6 @@ export async function magicErase({ bytes, pageIndex, mask, maskScale, mode = 'fa
 
     onProgress?.('inpaint', 0);
     if (mode === 'ai') {
-        const { inpaintMigan } = await import('./inpaint/migan');
         await inpaintMigan(img.data, grown, W, H, (p) => onProgress?.('model', p));
     } else {
         // Telea küçük yarıçapla en iyi; çok büyük alanlarda hız için ölçek düşür

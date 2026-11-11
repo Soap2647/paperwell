@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { useEditor } from '../../store/editor';
 import { newId } from '../../core/pageOps';
-import { eventToPage } from '../objects';
+import { eventToPage, capture } from '../objects';
 import { ShapeSvg } from './ObjectLayer';
 
 function build(kind, a, b, o, square) {
@@ -28,7 +28,7 @@ export default function ShapeLayer({ page, zoom }) {
 
     const down = (e) => {
         if (e.button !== 0) return;
-        e.currentTarget.setPointerCapture(e.pointerId);
+        capture(e);
         const p = eventToPage(e, ref.current, zoom);
         setD({ a: p, b: p, shift: e.shiftKey });
     };

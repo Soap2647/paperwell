@@ -122,3 +122,8 @@ export function moveBy(o, dx, dy) {
     if (o.type === 'highlight') return { rects: o.rects.map((r) => ({ ...r, x: r.x + dx, y: r.y + dy })) };
     return { x: o.x + dx, y: o.y + dy };
 }
+
+/** İşaretçiyi yakala (bazı ortamlarda/olaylarda hata verebilir) */
+export function capture(e) {
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* yoksay */ }
+}

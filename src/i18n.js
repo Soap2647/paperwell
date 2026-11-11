@@ -79,6 +79,9 @@ const EN = {
     'Word belgesi (.docx)': 'Word document (.docx)', 'Uyarı: Word dönüştürme yalnızca metni aktarır.': 'Note: Word conversion only transfers text.',
     'Sonuç bulunamadı': 'No results', 'sonuç': 'results', 'Tümünü değiştir': 'Replace all', 'Yeni metin': 'Replace with',
     'Değiştirildi': 'Replaced',
+    'Bu sayfada düzenlenebilir metin yok (taranmış olabilir). Akıllı silgi ve Metin aracını kullanın.': 'No editable text on this page (it may be scanned). Use the magic eraser and the Text tool.',
+    'Döndürülmüş metin henüz yerinde düzenlenemiyor; Akıllı silgi ve Metin aracını kullanın.': 'Rotated text cannot be edited in place yet; use the magic eraser and the Text tool.',
+    'Özellikler': 'Properties', 'Kaldır': 'Remove',
 };
 
 let locale = (() => {

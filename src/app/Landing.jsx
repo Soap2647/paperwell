@@ -23,7 +23,7 @@ export default function Landing() {
     const [drag, setDrag] = useState(false);
     const [mergeOpen, setMergeOpen] = useState(false);
     const theme = useTheme();
-    const dark = document.documentElement.classList.contains('dark');
+    const dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
     const onFiles = (files) => {
         const f = files?.[0];
@@ -39,7 +39,7 @@ export default function Landing() {
                 </div>
                 <div className="flex items-center gap-1">
                     <IconButton icon={Languages} label={getLocale() === 'tr' ? 'English' : 'Türkçe'} onClick={() => setLocale(getLocale() === 'tr' ? 'en' : 'tr')} />
-                    <IconButton icon={dark ? Sun : Moon} label={t('Tema')} onClick={() => setTheme(dark ? 'light' : 'dark')} data-theme={theme} />
+                    <IconButton icon={dark ? Sun : Moon} label={t('Tema')} onClick={() => setTheme(dark ? 'light' : 'dark')} />
                     <a href="https://github.com/" target="_blank" rel="noreferrer" className="w-8 h-8 inline-flex items-center justify-center rounded-lg text-fg-2 hover:bg-surface-3 hover:text-fg" aria-label="GitHub">
                         <Github className="w-[18px] h-[18px]" />
                     </a>
