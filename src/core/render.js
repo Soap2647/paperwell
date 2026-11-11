@@ -48,6 +48,7 @@ export async function renderRegion(bytes, pageIndex, rect, scale) {
     return canvas;
 }
 
+/** background: renk, null (pdf.js varsayılanı: beyaz) ya da 'transparent' (alfa korunur) */
 export async function renderPageToCanvas(bytes, pageIndex, scale, background = '#fff') {
     const doc = await getPdfjsDoc(bytes);
     const page = await doc.getPage(pageIndex + 1);
@@ -56,12 +57,13 @@ export async function renderPageToCanvas(bytes, pageIndex, scale, background = '
     canvas.width = Math.round(viewport.width);
     canvas.height = Math.round(viewport.height);
     const ctx = canvas.getContext('2d');
-    if (background) {
+    if (background && background !== 'transparent') {
         ctx.fillStyle = background;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     // 'print' amacı requestAnimationFrame kullanmaz: sekme arka plandayken de tamamlanır
-    await page.render({ canvasContext: ctx, viewport, intent: 'print' }).promise;
+    const transparent = background === 'transparent' ? { background: 'rgba(0,0,0,0)' } : {};
+    await page.render({ canvasContext: ctx, viewport, intent: 'print', ...transparent }).promise;
     return canvas;
 }
 

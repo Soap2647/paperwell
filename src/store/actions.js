@@ -126,7 +126,7 @@ export async function download(ed, { saveAs = false } = {}) {
         let saved;
         if (s.doc.kind === 'image') {
             const k = (s.doc.imageSize?.w || s.doc.pages[0].width) / s.doc.pages[0].width;
-            const canvas = await renderPageToCanvas(out, 0, k, s.doc.mime === 'image/jpeg' ? '#fff' : null);
+            const canvas = await renderPageToCanvas(out, 0, k, s.doc.mime === 'image/jpeg' ? '#fff' : 'transparent');
             const jpeg = s.doc.mime === 'image/jpeg';
             const blob = await new Promise((r) => canvas.toBlob(r, jpeg ? 'image/jpeg' : 'image/png', 0.95));
             saved = await saveFile(blob, `${baseName(s.doc.name)}-paperwell.${jpeg ? 'jpg' : 'png'}`);

@@ -36,6 +36,7 @@ const initialState = {
     page: 0,
     busy: null, // { label, progress? }
     dialog: null,
+    bgTarget: null, // arka plan kaldırma hedefi: görsel nesne kimliği (yoksa görsel belgenin sayfası)
     redactions: {}, // pageId → [{x,y,w,h}]
     forms: { values: {}, flatten: false }, // form alanı değerleri (ad → değer)
     search: null, // { query, results: [], index }
@@ -66,7 +67,7 @@ function reducer(s, a) {
             return { ...initialState, opts: s.opts };
         case 'COMMIT': {
             // Belge baytları (ve gerekirse sayfa listesi / nesneler) değişti
-            const doc = { ...s.doc, bytes: a.bytes, pages: a.pages || s.doc.pages };
+            const doc = { ...s.doc, ...a.docChanges, bytes: a.bytes, pages: a.pages || s.doc.pages };
             return {
                 ...s,
                 past: pushPast(s),

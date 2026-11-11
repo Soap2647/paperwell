@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
     Bold, Italic, AlignLeft, AlignCenter, AlignRight, Trash2, Copy, ArrowUp, ArrowDown, Square, Circle, Minus, MoveRight,
-    Pen, Highlighter, Underline, Strikethrough, ImageUp, Plus, Check, X, Download, Sparkles, Zap, Search,
+    Pen, Highlighter, Underline, Strikethrough, ImageUp, Plus, Check, X, Download, Sparkles, Zap, Search, ImageMinus,
 } from 'lucide-react';
 import { useEditor, findObject } from '../store/editor';
 import { commitBytes, withBusy } from '../store/actions';
@@ -189,7 +189,12 @@ function ObjectPanel({ o, pageId }) {
                         <Field label={t('Renk')}><ColorPicker value={o.color} swatches={HIGHLIGHT_COLORS.concat(['#e11d48', '#2563eb'])} onChange={(color) => update({ color })} /></Field>
                     </>
                 )}
-                {o.type === 'image' && opacity}
+                {o.type === 'image' && (
+                    <>
+                        {opacity}
+                        <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: o.id } })}>{t('Arka planı kaldır')}</Button>
+                    </>
+                )}
                 {o.type === 'note' && (
                     <>
                         <Field label={t('Renk')}><ColorPicker value={o.color} swatches={['#facc15', '#fb923c', '#4ade80', '#60a5fa', '#f472b6', '#c084fc']} onChange={(color) => update({ color })} /></Field>
@@ -223,6 +228,7 @@ function ToolPanel({ tool }) {
             <p className="text-[13px] text-fg-2 leading-relaxed -mt-1">{t(meta?.hint || '')}</p>
             {tool === 'select' && <DocSummary />}
             {tool === 'select' && <FormInfo />}
+            {tool === 'select' && state.doc.kind === 'image' && <ImageDocActions />}
             {tool === 'edit' && (
                 <p className="text-[13px] text-fg-2 leading-relaxed">{t('Düzenlemek için bir metin satırına ya da görsele tıklayın.')} Fontta varsa metin orijinal fontla yazılır.</p>
             )}
@@ -282,6 +288,15 @@ function DocSummary() {
             <dt className="text-fg-3">Katman</dt><dd className="tabular-nums">{objCount}</dd>
             <dt className="col-span-2 text-xs text-fg-3 pt-2 leading-relaxed">{t('Bir nesne seçin ya da soldan bir araç seçin.')} <kbd className="font-mono">?</kbd> kısayollar.</dt>
         </dl>
+    );
+}
+
+function ImageDocActions() {
+    const { dispatch } = useEditor();
+    return (
+        <div className="flex flex-col gap-2">
+            <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: null } })}>{t('Arka planı kaldır')}</Button>
+        </div>
     );
 }
 

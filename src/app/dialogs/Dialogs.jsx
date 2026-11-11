@@ -12,6 +12,7 @@ import MergeDialog from './MergeDialog';
 import OcrDialog from './OcrDialog';
 import PrintDialog from './PrintDialog';
 import SignatureDialog from './SignatureDialog';
+import BgRemoveDialog from './BgRemoveDialog';
 
 function PositionGrid({ value, onChange, positions }) {
     return (
@@ -261,6 +262,7 @@ export default function Dialogs() {
             <ShortcutsDialog open={d === 'shortcuts'} onClose={close} />
             <OcrDialog open={d === 'ocr'} onClose={close} />
             <PrintDialog open={d === 'print'} onClose={close} />
+            <BgRemoveDialog open={d === 'bgremove'} onClose={close} />
             <SignatureDialog
                 open={d === 'signature'}
                 onClose={close}
