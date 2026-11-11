@@ -55,6 +55,8 @@ Motor testleri (Node, PyMuPDF gerekmez):
 npm test
 ```
 
+Sihirli Katmanlar tarayıcı testi (sentetik afiş; top, logo, ikonlar, kavis ve 12 yazı ölçülür): `npm run dev`, sonra `http://localhost:5199/tests/magic-layers.html`.
+
 ## Mimari
 
 ```

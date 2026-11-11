@@ -1,0 +1,159 @@
+<!doctype html>
+<!--
+  Sihirli Katmanlar tarayıcı testi. Çalıştırma: npm run dev, sonra http://localhost:5199/tests/magic-layers.html
+  Modeller (OCR, SAM 2, LaMa, MI-GAN) ilk açılışta iner ve önbelleğe alınır.
+  GDG tarzı sentetik afiş çizer (gürültülü degrade salon + file, radyal degrade top, 4 çubuklu logo,
+  eğik başlıklar, açık zemin üzerinde beyaz yazılar, ikonlar, kavisler), katmanlara ayırır ve ölçer.
+  Ölçüt: top IoU ≥ 0.8, logo + 3 ikon + kavis ayrı öğe, metin 11/12+. Sonuç sayfada ve window.__result'ta.
+-->
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sihirli Katmanlar testi</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 16px; background: #111; color: #eee; }
+  pre { white-space: pre-wrap; background: #1b1b1b; padding: 12px; border-radius: 8px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; }
+  canvas { max-width: 420px; width: 100%; background: #777; }
+  .ok { color: #4ade80; } .fail { color: #f87171; }
+</style>
+</head>
+<body>
+<h1>Sihirli Katmanlar testi</h1>
+<p id="status">Çalışıyor...</p>
+<div class="row"><canvas id="poster"></canvas><canvas id="bg"></canvas><canvas id="layers"></canvas></div>
+<pre id="result"></pre>
+<script type="module">
+import { magicLayers } from '/src/core/magicLayers.js';
+import { registerCssFonts } from '/src/core/fonts.js';
+
+const W = 900, H = 1125;
+const TEXTS = [];
+
+function rng(seed) { return () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff); }
+
+async function drawPoster() {
+    registerCssFonts();
+    await document.fonts.load('bold 40px "Liberation Sans"');
+    await document.fonts.load('40px "Liberation Sans"');
+    const c = document.getElementById('poster');
+    c.width = W; c.height = H;
+    const x = c.getContext('2d');
+    // gürültülü degrade "salon" zemini: üst açık, alt koyu mavi
+    const g = x.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#eef2f8'); g.addColorStop(0.45, '#9fb3d6'); g.addColorStop(1, '#1d2b4f');
+    x.fillStyle = g; x.fillRect(0, 0, W, H);
+    const img = x.getImageData(0, 0, W, H), r = rng(3);
+    for (let i = 0; i < img.data.length; i += 4) { const n = (r() - 0.5) * 18; img.data[i] += n; img.data[i + 1] += n; img.data[i + 2] += n; }
+    x.putImageData(img, 0, 0);
+    // file çizgileri
+    x.strokeStyle = 'rgba(20,20,30,0.55)'; x.lineWidth = 2;
+    for (let i = 0; i < 18; i++) { x.beginPath(); x.moveTo(430 + i * 26, 700); x.lineTo(380 + i * 30, 1125); x.stroke(); }
+    for (let j = 0; j < 12; j++) { x.beginPath(); x.moveTo(420, 720 + j * 34); x.lineTo(900, 700 + j * 30); x.stroke(); }
+    // top: radyal degrade, merkez (690,360), r=110
+    const bg = x.createRadialGradient(650, 320, 10, 690, 360, 110);
+    bg.addColorStop(0, '#fff6b0'); bg.addColorStop(0.6, '#f4c20d'); bg.addColorStop(1, '#b8860b');
+    x.fillStyle = bg; x.beginPath(); x.arc(690, 360, 110, 0, Math.PI * 2); x.fill();
+    x.strokeStyle = '#1a56db'; x.lineWidth = 9;
+    for (const [a0, a1] of [[-0.9, 0.9], [2.2, 4.0]]) { x.beginPath(); x.arc(690, 360, 70, a0, a1); x.stroke(); }
+    // logo: 4 yuvarlak çubuk
+    const bar = (cx, cy, ang, col) => { x.save(); x.translate(cx, cy); x.rotate(ang); x.fillStyle = col; x.beginPath(); x.roundRect(-26, -10, 52, 20, 10); x.fill(); x.restore(); };
+    bar(70, 70, -0.6, '#ea4335'); bar(70, 100, 0.6, '#4285f4'); bar(130, 70, 0.6, '#34a853'); bar(130, 100, -0.6, '#fbbc04');
+    const text = (s, cx, cy, size, bold, color, ang = 0) => {
+        x.save(); x.translate(cx, cy); x.rotate(ang); x.font = `${bold ? 'bold ' : ''}${size}px "Liberation Sans"`;
+        x.fillStyle = color; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(s, 0, 0); x.restore();
+        TEXTS.push(s);
+    };
+    const left = (s, lx, cy, size, bold, color) => { x.font = `${bold ? 'bold ' : ''}${size}px "Liberation Sans"`; text(s, lx + x.measureText(s).width / 2, cy, size, bold, color); };
+    left('Google Developer Group', 180, 72, 30, true, '#202124');
+    left('Kastamonu University', 180, 108, 24, false, '#1a73e8');
+    text('Voleybol', 300, 300, 110, true, '#111827', -0.1);
+    text('Gecesi', 300, 420, 96, false, '#111827', -0.1);
+    left('Spor, eğlence ve güzel bir akşam', 50, 500, 26, false, '#ffffff');
+    left('için sen de aramıza katıl!', 50, 536, 26, false, '#ffffff');
+    const icons = [[70, 590, '#4285f4'], [70, 670, '#fbbc04'], [70, 750, '#ea4335']];
+    for (const [ix, iy, col] of icons) { x.fillStyle = col; x.beginPath(); x.roundRect(ix - 24, iy - 24, 48, 48, 10); x.fill(); x.fillStyle = '#fff'; x.fillRect(ix - 10, iy - 10, 20, 20); }
+    left('19 Ekim 2026', 110, 580, 28, true, '#ffffff');
+    left('Pazartesi', 110, 608, 22, false, '#ffffff');
+    left('18.00', 110, 668, 28, true, '#ffffff');
+    left('Kastamonu Üniversitesi', 110, 740, 28, true, '#ffffff');
+    left('Ayyıldız Spor Kompleksi', 110, 770, 22, false, '#ffffff');
+    text('Hadi sahaya!', 220, 960, 54, true, '#ffffff', -0.25);
+    // yeşil kavis
+    x.strokeStyle = '#34a853'; x.lineWidth = 12; x.lineCap = 'round';
+    x.beginPath(); x.arc(560, 560, 150, Math.PI * 0.15, Math.PI * 0.55); x.stroke();
+    // mavi kavisler (topun üstünde)
+    x.strokeStyle = '#4285f4'; x.lineWidth = 10;
+    x.beginPath(); x.arc(690, 360, 150, -2.6, -1.9); x.stroke();
+    return {
+        canvas: c,
+        truth: {
+            ball: { cx: 690, cy: 360, r: 110 },
+            logo: [40, 45, 160, 125],
+            icons: icons.map(([ix, iy]) => [ix - 24, iy - 24, ix + 24, iy + 24]),
+            arc: [560 + 150 * Math.cos(Math.PI * 0.55) - 8, 560 + 150 * Math.sin(Math.PI * 0.15) - 8, 560 + 150 * Math.cos(Math.PI * 0.15) + 8, 560 + 150 + 8],
+        },
+    };
+}
+
+const boxIoU = (a, b) => {
+    const ix = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0])), iy = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+    const inter = ix * iy, u = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter;
+    return u ? inter / u : 0;
+};
+
+function ballIoU(el, ball) {
+    const d = el.canvas.getContext('2d').getImageData(0, 0, el.w, el.h).data;
+    let inter = 0, mine = 0;
+    for (let y = 0; y < el.h; y++) for (let x = 0; x < el.w; x++) {
+        if (d[(y * el.w + x) * 4 + 3] < 128) continue;
+        mine++;
+        if (Math.hypot(el.x + x + 0.5 - ball.cx, el.y + y + 0.5 - ball.cy) <= ball.r) inter++;
+    }
+    const area = Math.PI * ball.r * ball.r;
+    return inter / (mine + area - inter);
+}
+
+const norm = (s) => s.normalize('NFC').replace(/\s+/g, ' ').trim();
+
+async function run() {
+    const { canvas, truth } = await drawPoster();
+    const t0 = performance.now();
+    const res = await magicLayers(canvas, { fill: 'best', onProgress: (p, s) => { document.getElementById('status').textContent = `${s} ${Math.round(p * 100)}%`; } });
+    const ms = Math.round(performance.now() - t0);
+
+    const els = res.elements.map((e) => ({ ...e, box: [e.x, e.y, e.x + e.w, e.y + e.h] }));
+    const best = (box) => Math.max(0, ...els.map((e) => boxIoU(e.box, box)));
+    const ball = Math.max(0, ...els.map((e) => ballIoU(e, truth.ball)));
+    const found = res.texts.map((t) => norm(t.text));
+    const textOk = TEXTS.filter((s) => found.includes(norm(s)));
+    const checks = {
+        ball: ball >= 0.8,
+        logo: best(truth.logo) >= 0.5,
+        icons: truth.icons.every((b) => best(b) >= 0.5),
+        arc: best(truth.arc) >= 0.3,
+        texts: textOk.length >= 11,
+    };
+    const result = {
+        ok: Object.values(checks).every(Boolean), checks, ms,
+        ballIoU: +ball.toFixed(3), logoIoU: +best(truth.logo).toFixed(2), iconIoU: truth.icons.map((b) => +best(b).toFixed(2)), arcIoU: +best(truth.arc).toFixed(2),
+        texts: `${textOk.length}/${TEXTS.length}`, missing: TEXTS.filter((s) => !found.includes(norm(s))), extra: found.filter((s) => !TEXTS.map(norm).includes(s)),
+        elements: els.map((e) => e.box.map(Math.round)),
+    };
+    window.__result = result;
+
+    // görsel çıktı: temizlenmiş arka plan ve katmanlar
+    const bgc = document.getElementById('bg'); bgc.width = W; bgc.height = H; bgc.getContext('2d').drawImage(res.background, 0, 0);
+    const lc = document.getElementById('layers'); lc.width = W; lc.height = H;
+    const lx = lc.getContext('2d');
+    for (const e of res.elements) { lx.drawImage(e.canvas, e.x, e.y); lx.strokeStyle = '#e11d48'; lx.lineWidth = 2; lx.strokeRect(e.x, e.y, e.w, e.h); }
+    const st = document.getElementById('status');
+    st.textContent = result.ok ? 'GEÇTİ' : 'KALDI';
+    st.className = result.ok ? 'ok' : 'fail';
+    document.getElementById('result').textContent = JSON.stringify(result, null, 2);
+}
+run().catch((e) => { window.__result = { error: e.message }; document.getElementById('status').textContent = 'Hata: ' + e.message; });
+</script>
+</body>
+</html>

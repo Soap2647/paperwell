@@ -134,7 +134,9 @@ async function extractTexts(canvas, { onProgress, exclude }) {
         const crop = cropRotated(canvas, b, Math.round(b.h));
         const tp = textPixels(crop);
         // Düşük kontrastlı yazılar çoğunlukla fotoğrafın parçasıdır (forma, tabela): dokunma
-        if (!tp.box || tp.contrast < 110) continue;
+        // Düşük kontrastlı kısa yazılar çoğunlukla fotoğrafın parçasıdır (forma no, tabela); uzun ve kesin okunan satırlar tutulur
+        const letters = (r.text.match(/\p{L}/gu) || []).length;
+        if (!tp.box || (tp.contrast < 110 && !(tp.contrast >= 50 && r.conf >= 0.95 && letters >= 4))) continue;
         // Türkçe harfler: büyütülmüş kesiti Tesseract ile oku, aynı kelimelerse onun yazımını al
         let text = r.text;
         try {
@@ -242,7 +244,6 @@ export async function extractElements(canvas, emb, { onProgress, textBoxes, text
             }
         }
     }
-    const explained = new Uint8Array(G * G); // bulunan nesne ya da büyük zemin: bu noktalar tekrar sorulmaz
     const cands = [];
     cands.small = small;
     const N = 16;
@@ -251,7 +252,8 @@ export async function extractElements(canvas, emb, { onProgress, textBoxes, text
     for (let k = 0; k < pts.length; k++) {
         onProgress?.(k / pts.length);
         const gx = Math.floor(pts[k][0] * G), gy = Math.floor(pts[k][1] * G);
-        if (inText[gy * G + gx] || explained[gy * G + gx]) continue;
+        // Not: büyük zemin maskeleri nesneleri de kapsayabildiğinden "açıklanmış" noktalar atlanmaz
+        if (inText[gy * G + gx]) continue;
         const r = await decode2(emb, { points: [{ x: pts[k][0] * W, y: pts[k][1] * H, positive: true }] });
         for (const m of r.masks) {
             let on = 0, hi = 0, lo = 0, txt = 0, edge = 0;
@@ -262,7 +264,6 @@ export async function extractElements(canvas, emb, { onProgress, textBoxes, text
                 if (v > -1) lo++;
             }
             const area = on / (G * G), stab = lo ? hi / lo : 0;
-            if (area > 0.3 && stab > 0.9) { for (let i = 0; i < G * G; i++) if (m.logits[i] > 0) explained[i] = 1; continue; }
             if (area < 0.0006 || area > 0.3 || stab < 0.86 || txt / on > 0.35) continue;
             cands.push({ logits: m.logits, area, stab, score: m.score, edge: edge / on });
         }
@@ -277,7 +278,7 @@ export async function extractElements(canvas, emb, { onProgress, textBoxes, text
     }
     const sat = new Uint8Array(G * G);
     const cell = (W / G) * (H / G);
-    for (let i = 0; i < G * G; i++) if (satN[i] >= cell * 0.25 && !explained[i]) sat[i] = 1;
+    for (let i = 0; i < G * G; i++) if (satN[i] >= cell * 0.25) sat[i] = 1;
     const covered = (i) => cands.some((c) => c.area < 0.3 && c.logits[i] > 0);
     const seen = new Uint8Array(G * G);
     for (let i = 0; i < G * G; i++) {
@@ -300,7 +301,7 @@ export async function extractElements(canvas, emb, { onProgress, textBoxes, text
             for (let k = 0; k < G * G; k++) { const v = m.logits[k]; if (v > 0) { on++; if (textInk ? textInk[k] : inText[k]) txt++; } if (v > 1) hi++; if (v > -1) lo++; }
             const area = on / (G * G), stab = lo ? hi / lo : 0;
             if (area < 0.0002 || area > 0.05 || stab < 0.86 || txt / on > 0.35) continue;
-            cands.push({ logits: m.logits, area, stab, score: m.score, edge: 0 });
+            cands.push({ logits: m.logits, area, stab, score: m.score, edge: 0, fromSat: true });
         }
     }
     return raw ? cands : selectElements(cands, small);
@@ -349,11 +350,12 @@ function maskFeatures(c, small) {
 export function selectElements(cands, small) {
     const keep = [];
     for (const c of cands) {
-        if (c.score < 0.3) continue;
         const f = maskFeatures(c, small);
         c.f = f;
+        // SAM 2 int8 skorları ince çizgilerde çok düşük çıkıyor: doygun renk taramasından gelen ince adaylarda skora bakılmaz
+        if (c.score < 0.3 && !(f.solid < 0.3 && f.top1 >= 0.5 && f.bc >= 0.9 && f.chroma >= 100)) continue;
         const compact = f.solid >= 0.6 && f.aspect <= 2.2 && f.bc >= 0.6;
-        const stroke = f.solid < 0.3 && f.chroma >= 150 && f.top1 >= 0.18 && f.bc >= 0.75;
+        const stroke = f.solid < 0.3 && f.chroma >= 100 && f.top1 >= 0.18 && f.bc >= 0.75;
         const blob = f.solid >= 0.5 && f.top1 >= 0.6 && f.chroma >= 100 && f.bc >= 0.6;
         // küçük süs (fırça vuruşu, yıldız, çizgi): biçimi ne olursa olsun tek, doygun renk
         const accent = c.area < 0.002 && f.top1 >= 0.35 && f.chroma >= 120 && f.bc >= 0.6;
@@ -361,6 +363,21 @@ export function selectElements(cands, small) {
     }
     // Tekrarları ayıkla: aynı bölgeyi kaplayan adaylardan büyük olanı tut (parça yerine bütün)
     keep.sort((a, b) => b.area - a.area);
+    // Birbirinden açıkça ayrık iki ya da daha çok kabul edilmiş parçayı birlikte kapsayan maske (alt alta ikonlar gibi) yerine parçalar
+    const boxes = new Map(keep.map((c) => [c, maskBox(c.logits)]));
+    const inside = (a, b) => { let n = 0, k = 0; for (let i = 0; i < G * G; i++) if (a.logits[i] > 0) { n++; if (b.logits[i] > 0) k++; } return n ? k / n : 0; };
+    const apart = (p, q) => {
+        const A = boxes.get(p), B = boxes.get(q);
+        const gap = Math.max(A.x0 - B.x1, B.x0 - A.x1, A.y0 - B.y1, B.y0 - A.y1);
+        return gap > 0.3 * Math.min(A.x1 - A.x0, A.y1 - A.y0, B.x1 - B.x0, B.y1 - B.y0);
+    };
+    for (let i = keep.length - 1; i >= 0; i--) {
+        const big = keep[i];
+        const parts = keep.filter((c) => c !== big && c.area < big.area * 0.8 && inside(c, big) > 0.8);
+        const covered = parts.reduce((sum, p) => sum + p.area, 0) / big.area;
+        const split = covered > 0.6 && parts.some((p) => parts.some((q) => p !== q && apart(p, q)));
+        if (split) keep.splice(i, 1);
+    }
     const final = [];
     for (const c of keep) {
         let dup = false;
@@ -413,8 +430,12 @@ function sampleLogits(logits, fx, fy) {
 
 /** Nesneyi tam çözünürlükte keser; yerini onarım maskesine işler */
 function cutElement(img, W, H, c, mask) {
+    // Yalnız kesin maskenin (logit > 0) yakını: düşük olasılıklı kuyruk komşu nesnelere uzanıp onların soluk kopyasını taşımasın
+    const pos = new Uint8Array(G * G), near = new Uint8Array(G * G);
+    for (let i = 0; i < G * G; i++) if (c.logits[i] > 0) pos[i] = 1;
+    dilateInto(pos, G, G, 1, near);
     let x0 = G, y0 = G, x1 = -1, y1 = -1;
-    for (let i = 0; i < G * G; i++) if (c.logits[i] > -2) { const x = i % G, y = (i / G) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    for (let i = 0; i < G * G; i++) if (near[i]) { const x = i % G, y = (i / G) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
     const bx0 = Math.max(0, Math.floor(((x0 - 1) / G) * W)), by0 = Math.max(0, Math.floor(((y0 - 1) / G) * H));
     const bx1 = Math.min(W, Math.ceil(((x1 + 2) / G) * W)), by1 = Math.min(H, Math.ceil(((y1 + 2) / G) * H));
     const w = bx1 - bx0, h = by1 - by0;
@@ -423,7 +444,8 @@ function cutElement(img, W, H, c, mask) {
     let ax0 = w, ay0 = h, ax1 = -1, ay1 = -1;
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
         const gx = bx0 + x, gy = by0 + y;
-        const l = sampleLogits(c.logits, (gx + 0.5) / W, (gy + 0.5) / H);
+        const nearHere = near[Math.min(G - 1, Math.floor(((gy + 0.5) / H) * G)) * G + Math.min(G - 1, Math.floor(((gx + 0.5) / W) * G))];
+        const l = nearHere ? sampleLogits(c.logits, (gx + 0.5) / W, (gy + 0.5) / H) : -10;
         const a = 255 * sigmoid(2 * l);
         const si = (gy * W + gx) * 4, oi = (y * w + x) * 4;
         out.data[oi] = img[si]; out.data[oi + 1] = img[si + 1]; out.data[oi + 2] = img[si + 2]; out.data[oi + 3] = a;
