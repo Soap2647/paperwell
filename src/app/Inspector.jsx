@@ -11,6 +11,7 @@ import { getPageModel, searchDocument } from '../core/modelCache';
 import { redactRects, replaceImageContent, deleteImage } from '../core/pdf/editOps';
 import { isMiganCached, loadMigan } from '../core/inpaint/migan';
 import { isSamCached, loadSam } from '../core/segment';
+import { getBackend } from '../core/inference';
 import { applyGrab, clearGrab } from './grabActions';
 import { FONT_FAMILIES } from '../core/fonts';
 import { documentHasForm } from '../core/forms';
@@ -283,6 +284,20 @@ function ToolPanel({ tool }) {
     );
 }
 
+/** Yapay zekâ modellerinin nerede çalıştığı: GPU (adaptör) / CPU / Tarayıcı */
+function AccelInfo() {
+    const [b, setB] = useState(null);
+    useEffect(() => { getBackend().then(setB); }, []);
+    if (!b) return null;
+    const label = b.kind === 'gpu' ? `GPU (${b.adapter})` : b.kind === 'cpu' ? 'CPU' : t('Tarayıcı');
+    return (
+        <>
+            <dt className="text-fg-3">{t('Hızlandırma')}</dt>
+            <dd className="truncate" title={b.reason || label}>{label}{b.reason ? ' ⚠' : ''}</dd>
+        </>
+    );
+}
+
 function DocSummary() {
     const { state } = useEditor();
     const p = state.doc.pages[state.page];
@@ -293,6 +308,7 @@ function DocSummary() {
             <dt className="text-fg-3">{t('Sayfa')}</dt><dd className="tabular-nums">{state.page + 1} / {state.doc.pages.length}</dd>
             <dt className="text-fg-3">{t('Boyut')}</dt><dd className="tabular-nums">{mm(p.width)} × {mm(p.height)} mm</dd>
             <dt className="text-fg-3">Katman</dt><dd className="tabular-nums">{objCount}</dd>
+            <AccelInfo />
             <dt className="col-span-2 text-xs text-fg-3 pt-2 leading-relaxed">{t('Bir nesne seçin ya da soldan bir araç seçin.')} <kbd className="font-mono">?</kbd> kısayollar.</dt>
         </dl>
     );
