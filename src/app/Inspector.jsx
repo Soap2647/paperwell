@@ -18,6 +18,7 @@ import { Button, ColorPicker, Field, Segmented, Slider, Toggle, cx } from '../co
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import { TOOLS } from './tools';
+import LayersPanel from './LayersPanel';
 import { readImageFile } from './imageFiles';
 import { loadSignatures, saveSignatures } from './dialogs/SignatureDialog';
 
@@ -140,6 +141,9 @@ function ObjectPanel({ o, pageId }) {
     const opacity = (
         <Slider label={t('Opaklık')} value={Math.round((o.opacity ?? 1) * 100)} min={5} max={100} unit="%" onStart={checkpoint} onChange={(v) => live({ opacity: v / 100 })} />
     );
+    const rotation = (
+        <Slider label={t('Açı')} value={Math.round(o.rotation || 0)} min={-180} max={180} unit="°" onStart={checkpoint} onChange={(v) => live({ rotation: v })} />
+    );
     const titles = { text: t('Metin'), rect: t('Dikdörtgen'), ellipse: t('Elips'), line: t('Çizgi'), arrow: t('Ok'), path: t('Çiz'), highlight: t('Vurgu'), image: o.signature ? t('İmza') : t('Görsel'), note: t('Not') };
 
     return (
@@ -157,6 +161,7 @@ function ObjectPanel({ o, pageId }) {
                         </Field>
                         <Field label={t('Renk')}><ColorPicker value={o.color} onChange={(color) => update({ color })} /></Field>
                         {opacity}
+                        {rotation}
                         <p className="text-xs text-fg-3">Çift tıklayarak metni düzenleyin.</p>
                     </>
                 )}
@@ -192,6 +197,7 @@ function ObjectPanel({ o, pageId }) {
                 {o.type === 'image' && (
                     <>
                         {opacity}
+                        {rotation}
                         <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: o.id } })}>{t('Arka planı kaldır')}</Button>
                     </>
                 )}
@@ -506,6 +512,7 @@ export default function Inspector() {
         <aside data-inspector className="w-[272px] shrink-0 bg-surface border-l border-line overflow-y-auto scroll-thin hidden lg:block">
             <div className="h-10 px-4 flex items-center border-b border-line text-xs font-semibold text-fg-2">{t('Özellikler')}</div>
             {content}
+            {state.tool === 'select' && <LayersPanel />}
         </aside>
     );
 }

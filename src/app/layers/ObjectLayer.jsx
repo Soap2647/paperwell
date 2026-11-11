@@ -11,7 +11,7 @@ const CURSORS = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: '
 
 export default function ObjectLayer({ page, zoom, interactive }) {
     const { state, dispatch } = useEditor();
-    const objs = state.objects[page.id] || [];
+    const objs = (state.objects[page.id] || []).filter((o) => !o.hidden);
     const selectedId = state.selected?.pageId === page.id ? state.selected.id : null;
     const editingId = state.editing?.kind === 'text' || state.editing?.kind === 'note' ? state.editing.id : null;
     const drag = useRef(null);
@@ -41,6 +41,7 @@ export default function ObjectLayer({ page, zoom, interactive }) {
         e.stopPropagation();
         e.preventDefault();
         if (selectedId !== o.id) dispatch({ type: 'SET', values: { selected: { pageId: page.id, id: o.id }, editing: null } });
+        if (o.locked) return; // kilitli katman seçilir ama taşınmaz
         drag.current = { id: o.id, handle, sx: e.clientX, sy: e.clientY, orig: o, keepAspect: o.type === 'image' };
     };
 
@@ -136,7 +137,8 @@ export function ShapeSvg({ o, hit }) {
             );
         }
         case 'image':
-            return <image href={o.src} x={o.x} y={o.y} width={o.w} height={o.h} preserveAspectRatio="none" opacity={op} />;
+            return <image href={o.src} x={o.x} y={o.y} width={o.w} height={o.h} preserveAspectRatio="none" opacity={op}
+                transform={o.rotation ? `rotate(${o.rotation} ${o.x + o.w / 2} ${o.y + o.h / 2})` : undefined} />;
         default:
             return null;
     }
@@ -185,6 +187,8 @@ function TextObject({ o, editing, interactive, onPointerDown, onDoubleClick }) {
                 left: o.x,
                 top: o.y,
                 ...textStyle(o),
+                transform: o.rotation ? `rotate(${o.rotation}deg)` : undefined,
+                transformOrigin: 'center',
                 minWidth: editing ? 20 : undefined,
                 pointerEvents: interactive || editing ? 'auto' : 'none',
                 cursor: editing ? 'text' : interactive ? 'move' : undefined,
@@ -254,16 +258,19 @@ function Selection({ o, zoom, onHandle }) {
             </svg>
         );
     }
-    const resizable = !['path', 'highlight', 'note'].includes(o.type);
+    const resizable = !['path', 'highlight', 'note'].includes(o.type) && !o.locked;
     const handles = o.type === 'text' || o.type === 'image' ? CORNERS : HANDLES;
     const pos = (h) => [b.x + (h.includes('w') ? 0 : h.includes('e') ? b.w : b.w / 2), b.y + (h.includes('n') ? 0 : h.includes('s') ? b.h : b.h / 2)];
+    const rot = (o.type === 'text' || o.type === 'image') && o.rotation ? `rotate(${o.rotation} ${b.x + b.w / 2} ${b.y + b.h / 2})` : undefined;
     return (
         <svg className="absolute inset-0 overflow-visible" style={{ pointerEvents: 'none', width: '100%', height: '100%' }}>
+            <g transform={rot}>
             <rect x={b.x - 2 / zoom} y={b.y - 2 / zoom} width={b.w + 4 / zoom} height={b.h + 4 / zoom} fill="none" stroke="var(--accent)" strokeWidth={sw} />
             {resizable && handles.map((h) => {
                 const [x, y] = pos(h);
                 return <rect key={h} x={x - r} y={y - r} width={r * 2} height={r * 2} rx={r / 3} fill="#fff" stroke="var(--accent)" strokeWidth={sw * 1.4} style={{ pointerEvents: 'auto', cursor: CURSORS[h] }} onPointerDown={(e) => onHandle(e, o, h)} />;
             })}
+            </g>
         </svg>
     );
 }

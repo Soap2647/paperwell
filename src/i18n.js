@@ -126,6 +126,8 @@ const EN = {
     'Metni tanı (OCR)': 'Recognize text (OCR)', 'PDF oluştur': 'Create PDF', 'Fotoğraf ekle': 'Add photo',
     'Taranıyor...': 'Scanning...', 'Tarama': 'Scan', 'sayfa tarandı': 'pages scanned',
     'Kaydedilmemiş değişiklikler kaybolacak. Devam edilsin mi?': 'Unsaved changes will be lost. Continue?',
+    // Katmanlar
+    'Katmanlar': 'Layers', 'Kilitle': 'Lock', 'Kilidi aç': 'Unlock', 'Gizle': 'Hide', 'Göster': 'Show',
 };
 
 let locale = (() => {

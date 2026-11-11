@@ -2,7 +2,7 @@
 // metin kutuları gerçek PDF yolları/metinleri olur; seçilebilir ve net kalır.
 import {
     PDFDocument, PDFHexString, rgb, BlendMode, LineCapStyle, LineJoinStyle,
-    pushGraphicsState, popGraphicsState, setLineJoin,
+    pushGraphicsState, popGraphicsState, setLineJoin, degrees,
 } from 'pdf-lib';
 import { pageGeometry } from './pdf/geometry';
 import { pageBox, pageRotation } from './pdf/pageModel';
@@ -85,8 +85,17 @@ export function layoutTextLines(text, size, lineHeight = 1.25) {
     return (text || '').split('\n').map((line, i) => ({ line, top: i * size * lineHeight }));
 }
 
+/** Nesne kutusunun merkezi etrafında o.rotation (derece, görünümde saat yönü) kadar döndüren fonksiyon */
+function rotator(o) {
+    const a = ((o.rotation || 0) * Math.PI) / 180;
+    if (!a) return (x, y) => [x, y];
+    const cx = o.x + (o.w || 0) / 2, cy = o.y + (o.h || 0) / 2, c = Math.cos(a), s = Math.sin(a);
+    return (x, y) => [cx + (x - cx) * c - (y - cy) * s, cy + (x - cx) * s + (y - cy) * c];
+}
+
 async function drawObject(doc, page, geom, o) {
     const opacity = o.opacity ?? 1;
+    if (o.hidden) return;
     switch (o.type) {
         case 'path': {
             const path = svgFromPoints(geom, o.points, true);
@@ -142,6 +151,7 @@ async function drawObject(doc, page, geom, o) {
         }
         case 'text': {
             const font = await embedFallbackFont(doc, o.family, o.bold, o.italic);
+            const rot = rotator(o);
             const lh = o.lineHeight || 1.25;
             const asc = font.heightAtSize(o.size, { descender: false });
             const full = font.heightAtSize(o.size);
@@ -150,14 +160,20 @@ async function drawObject(doc, page, geom, o) {
                 if (!line) continue;
                 const w = font.widthOfTextAtSize(line, o.size);
                 const dx = o.align === 'center' ? (o.w - w) / 2 : o.align === 'right' ? o.w - w : 0;
-                const [px, py] = geom.pdfPoint(o.x + dx, o.y + top + halfLeading + asc);
-                page.drawText(line, { x: px, y: py, size: o.size, font, color: color(o.color), opacity, rotate: viewBoxToPdf(geom, { x: 0, y: 0, w: 0, h: 0 }).rotate });
+                const [px, py] = geom.pdfPoint(...rot(o.x + dx, o.y + top + halfLeading + asc));
+                page.drawText(line, { x: px, y: py, size: o.size, font, color: color(o.color), opacity, rotate: degrees(geom.rotate - (o.rotation || 0)) });
             }
             break;
         }
         case 'image': {
             const img = await embedImage(doc, o.src);
-            page.drawImage(img, { ...viewBoxToPdf(geom, o), opacity });
+            if (o.rotation) {
+                // döndürülmüş kutu: sol-alt köşe merkez etrafında döner, açı görünümde saat yönünde
+                const [px, py] = geom.pdfPoint(...rotator(o)(o.x, o.y + o.h));
+                page.drawImage(img, { x: px, y: py, width: o.w, height: o.h, rotate: degrees(geom.rotate - o.rotation), opacity });
+            } else {
+                page.drawImage(img, { ...viewBoxToPdf(geom, o), opacity });
+            }
             break;
         }
         case 'note': {
