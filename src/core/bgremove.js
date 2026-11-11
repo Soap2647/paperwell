@@ -1,7 +1,9 @@
 // Arka plan kaldırma: görseldeki ana nesneyi ayırır, arka planı şeffaf / düz renk / bulanık yapar.
-// Hızlı: U²-Netp (Apache-2.0, ~4.6 MB). Hassas: U²-Netp'nin bulduğu nesne SAM 2 ile keskinleştirilir (+~62 MB).
-// (BiRefNet / BEN2 denendi: tarayıcıda WASM belleğine sığmıyor, WebGPU'da desteklenmeyen düğümler var.)
-import { openModel, isCached, tensor } from './inference';
+// Hızlı: U²-Netp (Apache-2.0, ~4.6 MB).
+// Hassas, masaüstü GPU (DirectML): BiRefNet (MIT, fp16, ~490 MB, 1024²) doğrudan yüksek kaliteli alfa verir.
+// Hassas, tarayıcı / CPU: U²-Netp'nin bulduğu nesne SAM 2 ile keskinleştirilir (+~62 MB).
+// (BiRefNet / BEN2 tarayıcıda WASM belleğine sığmıyor, WebGPU'da desteklenmeyen düğümler var.)
+import { openModel, isCached, tensor, getBackend } from './inference';
 import { isSam2Cached, encodeImage2, decode2, SAM2_BYTES } from './segment2';
 
 const MEAN = [0.485, 0.456, 0.406];
@@ -11,16 +13,25 @@ export const BG_MODELS = {
         url: 'https://huggingface.co/BritishWerewolf/U-2-Netp/resolve/7112208dbac3a3642496c8d54e2f0f9bb3dc1dc8/onnx/model.onnx',
         size: 320, bytes: 4.6e6, std: [0.229, 0.224, 0.225],
     },
+    // onnx-community/BiRefNet-ONNX (ZhengPeng7/BiRefNet, MIT); yalnız masaüstü GPU yolunda
+    birefnet: {
+        url: 'https://huggingface.co/onnx-community/BiRefNet-ONNX/resolve/534d3c82d3bb8b2f0867db6dfbc3a525b8e42f67/onnx/model_fp16.onnx',
+        size: 1024, bytes: 489.7e6, std: [0.229, 0.224, 0.225], sigmoid: true, exclusive: true,
+    },
 };
 
-export const PRECISE_BYTES = BG_MODELS.fast.bytes + SAM2_BYTES;
-export const isPreciseCached = async () => (await isBgModelCached('fast')) && (await isSam2Cached());
+const biRefNetHere = async () => (await getBackend()).kind === 'gpu';
+
+/** Hassas mod için indirilecek boyut (bayt) */
+export const preciseBytes = async () => ((await biRefNetHere()) ? BG_MODELS.birefnet.bytes : BG_MODELS.fast.bytes + SAM2_BYTES);
+export const isPreciseCached = async () => ((await biRefNetHere()) ? isBgModelCached('birefnet') : (await isBgModelCached('fast')) && (await isSam2Cached()));
 
 /**
  * Hassas maske: U²-Netp nesneyi bulur, kutusu SAM 2'ye sorulur, kaba maskeyle en çok örtüşen keskin maske alınır.
  * Sentetik testte (bilinen alfalı top, fotoğraflı zemin) ortalama alfa hatası 13 → 2.8.
  */
 export async function predictAlphaPrecise(image, onProgress) {
+    if (await biRefNetHere()) return predictAlpha(image, 'birefnet', onProgress);
     const coarse = await predictAlpha(image, 'fast', (p) => onProgress?.(p * 0.07));
     const W = image.width, H = image.height;
     let x0 = W, y0 = H, x1 = -1, y1 = -1;
@@ -64,7 +75,7 @@ export function isBgModelCached(quality) {
 export function loadBgModel(quality, onProgress) {
     if (!sessions[quality]) {
         const m = BG_MODELS[quality];
-        sessions[quality] = openModel([{ url: m.url, bytes: m.bytes }], onProgress).catch((e) => {
+        sessions[quality] = openModel([{ url: m.url, bytes: m.bytes }], onProgress, { exclusive: !!m.exclusive }).catch((e) => {
             delete sessions[quality];
             throw e;
         });
@@ -96,12 +107,17 @@ export async function predictAlpha(image, quality = 'fast', onProgress) {
     const name = session.outputNames.includes('output_image') ? 'output_image' : session.outputNames[0];
     const pred = out[name].data;
 
-    // 0-1 aralığına getir (rembg ile aynı: min-max)
     const mask = new Uint8ClampedArray(plane * 4);
-    let lo = Infinity, hi = -Infinity;
-    for (let i = 0; i < plane; i++) { if (pred[i] < lo) lo = pred[i]; if (pred[i] > hi) hi = pred[i]; }
-    const span = hi - lo || 1;
-    for (let i = 0; i < plane; i++) mask[i * 4 + 3] = ((pred[i] - lo) / span) * 255;
+    if (m.sigmoid) {
+        // BiRefNet: logit çıktı
+        for (let i = 0; i < plane; i++) mask[i * 4 + 3] = 255 / (1 + Math.exp(-pred[i]));
+    } else {
+        // 0-1 aralığına getir (rembg ile aynı: min-max)
+        let lo = Infinity, hi = -Infinity;
+        for (let i = 0; i < plane; i++) { if (pred[i] < lo) lo = pred[i]; if (pred[i] > hi) hi = pred[i]; }
+        const span = hi - lo || 1;
+        for (let i = 0; i < plane; i++) mask[i * 4 + 3] = ((pred[i] - lo) / span) * 255;
+    }
     // Görsel boyutuna yumuşak ölçekle
     const mc = new OffscreenCanvas(S, S);
     mc.getContext('2d').putImageData(new ImageData(mask, S, S), 0, 0);

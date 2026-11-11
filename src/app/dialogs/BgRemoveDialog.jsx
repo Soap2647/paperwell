@@ -6,7 +6,7 @@ import { useEditor, findObject } from '../../store/editor';
 import { withBusy } from '../../store/actions';
 import { readPages, rebuildPages } from '../../core/pageOps';
 import { renderPageToCanvas } from '../../core/render';
-import { BG_MODELS, PRECISE_BYTES, isBgModelCached, isPreciseCached, predictAlpha, predictAlphaPrecise, composite } from '../../core/bgremove';
+import { BG_MODELS, preciseBytes, isBgModelCached, isPreciseCached, predictAlpha, predictAlphaPrecise, composite } from '../../core/bgremove';
 import { Button, ColorPicker, Dialog, Field, Segmented, Slider, Spinner } from '../../components/ui';
 import { toast } from '../../components/Toaster';
 import { t } from '../../i18n';
@@ -48,6 +48,7 @@ export default function BgRemoveDialog({ open, onClose }) {
     const [quality, setQuality] = useState('precise');
     const [bg, setBg] = useState({ mode: 'transparent', color: '#ffffff', blur: 12 });
     const [cached, setCached] = useState({});
+    const [preciseSize, setPreciseSize] = useState(0);
     const [result, setResult] = useState(null); // { source, alpha, quality }
     const [running, setRunning] = useState(false);
     const [progress, setProgress] = useState(null);
@@ -55,7 +56,7 @@ export default function BgRemoveDialog({ open, onClose }) {
 
     useEffect(() => {
         if (!open) return;
-        Promise.all([isBgModelCached('fast'), isPreciseCached()]).then(([fast, precise]) => setCached({ fast, precise }));
+        Promise.all([isBgModelCached('fast'), isPreciseCached(), preciseBytes()]).then(([fast, precise, size]) => { setCached({ fast, precise }); setPreciseSize(size); });
     }, [open]);
 
     // Kapanınca sıfırla
@@ -126,7 +127,7 @@ export default function BgRemoveDialog({ open, onClose }) {
         });
     };
 
-    const mb = (q) => Math.round((q === 'precise' ? PRECISE_BYTES : BG_MODELS.fast.bytes) / 1e6);
+    const mb = (q) => Math.round((q === 'precise' ? preciseSize : BG_MODELS.fast.bytes) / 1e6);
     const needsDownload = !cached[quality] && !result;
 
     return (
