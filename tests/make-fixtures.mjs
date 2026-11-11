@@ -26,4 +26,24 @@ import fs from 'fs';
   p.drawText('Second line uses same font', { x: 50, y: 730, size: 14, font });
   fs.writeFileSync('tests/fixtures/cidfont.pdf', await doc.save());
 }
+{
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const p = doc.addPage([595, 842]);
+  const form = doc.getForm();
+  p.drawText('Basvuru Formu', { x: 50, y: 780, size: 20, font });
+  p.drawText('Ad Soyad:', { x: 50, y: 730, size: 12, font });
+  form.createTextField('adsoyad').addToPage(p, { x: 150, y: 722, width: 250, height: 22 });
+  p.drawText('Adres:', { x: 50, y: 690, size: 12, font });
+  const adres = form.createTextField('adres'); adres.enableMultiline(); adres.addToPage(p, { x: 150, y: 620, width: 300, height: 66 });
+  p.drawText('Onay:', { x: 50, y: 590, size: 12, font });
+  form.createCheckBox('onay').addToPage(p, { x: 150, y: 585, width: 16, height: 16 });
+  p.drawText('Cinsiyet:', { x: 50, y: 555, size: 12, font });
+  const rg = form.createRadioGroup('cinsiyet');
+  rg.addOptionToPage('Kadin', p, { x: 150, y: 552, width: 14, height: 14 });
+  rg.addOptionToPage('Erkek', p, { x: 230, y: 552, width: 14, height: 14 });
+  p.drawText('Sehir:', { x: 50, y: 520, size: 12, font });
+  const dd = form.createDropdown('sehir'); dd.addOptions(['Istanbul', 'Ankara', 'Izmir']); dd.addToPage(p, { x: 150, y: 514, width: 160, height: 22 });
+  fs.writeFileSync('tests/fixtures/form.pdf', await doc.save());
+}
 console.log('fixtures ok');

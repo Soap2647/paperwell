@@ -11,7 +11,8 @@ import { getPageModel, searchDocument } from '../core/modelCache';
 import { redactRects, replaceImageContent, deleteImage } from '../core/pdf/editOps';
 import { isMiganCached, loadMigan } from '../core/inpaint/migan';
 import { FONT_FAMILIES } from '../core/fonts';
-import { Button, ColorPicker, Field, Segmented, Slider, cx } from '../components/ui';
+import { documentHasForm } from '../core/forms';
+import { Button, ColorPicker, Field, Segmented, Slider, Toggle, cx } from '../components/ui';
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import { TOOLS } from './tools';
@@ -219,6 +220,7 @@ function ToolPanel({ tool }) {
         <Section title={t(meta?.label || '')}>
             <p className="text-[13px] text-fg-2 leading-relaxed -mt-1">{t(meta?.hint || '')}</p>
             {tool === 'select' && <DocSummary />}
+            {tool === 'select' && <FormInfo />}
             {tool === 'edit' && (
                 <p className="text-[13px] text-fg-2 leading-relaxed">{t('Düzenlemek için bir metin satırına ya da görsele tıklayın.')} Fontta varsa metin orijinal fontla yazılır.</p>
             )}
@@ -277,6 +279,25 @@ function DocSummary() {
             <dt className="text-fg-3">Katman</dt><dd className="tabular-nums">{objCount}</dd>
             <dt className="col-span-2 text-xs text-fg-3 pt-2 leading-relaxed">{t('Bir nesne seçin ya da soldan bir araç seçin.')} <kbd className="font-mono">?</kbd> kısayollar.</dt>
         </dl>
+    );
+}
+
+function FormInfo() {
+    const { state, dispatch } = useEditor();
+    const [has, setHas] = useState(false);
+    useEffect(() => {
+        let alive = true;
+        documentHasForm(state.doc.bytes, state.doc.pages.length).then((v) => alive && setHas(v));
+        return () => { alive = false; };
+    }, [state.doc.bytes, state.doc.pages.length]);
+    if (!has) return null;
+    const filled = Object.keys(state.forms.values).length;
+    return (
+        <div className="rounded-xl bg-accent-soft/60 border border-accent/20 p-3 space-y-3">
+            <div className="text-[13px] font-medium text-accent-text">{t('Bu belgede doldurulabilir form var')}</div>
+            <p className="text-xs text-fg-2 leading-relaxed">{t('Mavi alanlara tıklayıp yazın.')} {filled ? `${filled} ${t('alan dolduruldu')}.` : ''}</p>
+            <Toggle checked={state.forms.flatten} onChange={(flatten) => dispatch({ type: 'SET_FORM_FLATTEN', flatten })} label={t('Kaydederken düzleştir')} />
+        </div>
     );
 }
 

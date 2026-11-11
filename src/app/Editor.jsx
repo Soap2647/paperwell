@@ -29,7 +29,7 @@ export default function Editor() {
             const key = e.key.toLowerCase();
             if (s.dialog || s.busy) return;
 
-            if (mod && key === 's') { e.preventDefault(); download(ed); return; }
+            if (mod && key === 's') { e.preventDefault(); download(ed, { saveAs: e.shiftKey }); return; }
             if (mod && key === 'f') { e.preventDefault(); dispatch({ type: 'SET', values: { search: s.search || { query: '', results: [], index: 0 } } }); return; }
             if (typing) return;
 

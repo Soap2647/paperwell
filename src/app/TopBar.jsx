@@ -1,9 +1,10 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal,
+    FileOutput, Info, ScanText, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { download } from '../store/actions';
+import { isDesktop } from '../platform';
 import { t, getLocale, setLocale } from '../i18n';
 import { Button, IconButton, Menu, Tooltip } from '../components/ui';
 import { setTheme, useTheme } from './theme';
@@ -30,6 +31,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
         { label: t('Sıkıştır'), icon: Minimize2, onClick: () => open('compress') },
         { label: t('Filigran'), icon: Stamp, onClick: () => open('watermark') },
         { label: t('Sayfa numaraları'), icon: Hash, onClick: () => open('pagenumbers'), disabled: isImage },
+        { label: t('Metin tanıma (OCR)'), icon: ScanText, onClick: () => open('ocr') },
         '-',
         { label: t('Dışa aktar'), icon: FileOutput, onClick: () => open('export') },
         { label: t('Belge bilgileri'), icon: Info, onClick: () => open('properties') },
@@ -37,6 +39,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
 
     const moreItems = [
         { label: t('Yeni dosya'), icon: FilePlus2, onClick: closeDoc },
+        { label: t('Farklı kaydet'), icon: Download, onClick: () => download(ed, { saveAs: true }), shortcut: 'Ctrl+Shift+S' },
         { label: t('Klavye kısayolları'), icon: Keyboard, onClick: () => open('shortcuts'), shortcut: '?' },
         '-',
         { header: t('Tema') },
@@ -97,7 +100,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                 <Menu trigger={<span><Tooltip label={t('Belge araçları')}><Button variant="ghost" icon={Wrench} className="hidden lg:inline-flex">{t('Belge araçları')}</Button></Tooltip><IconButton icon={Wrench} label={t('Belge araçları')} className="lg:hidden" /></span>} items={toolItems} align="right" />
                 <Menu trigger={<IconButton icon={MoreHorizontal} label="Menu" />} items={moreItems} align="right" />
                 <Button variant="primary" icon={Download} onClick={() => download(ed)} className="ml-1">
-                    <span className="hidden sm:inline">{isImage ? t('PNG olarak indir') : t('İndir')}</span>
+                    <span className="hidden sm:inline">{isImage ? t('PNG olarak indir') : isDesktop ? t('Kaydet') : t('İndir')}</span>
                 </Button>
             </div>
         </header>

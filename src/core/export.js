@@ -8,6 +8,7 @@ import { pageGeometry } from './pdf/geometry';
 import { pageBox, pageRotation } from './pdf/pageModel';
 import { viewBoxToPdf } from './pdf/placement';
 import { embedFallbackFont } from './fonts';
+import { fillForm } from './forms';
 
 export function hexToRgb01(hex = '#000000') {
     const h = hex.replace('#', '');
@@ -187,10 +188,12 @@ async function drawObject(doc, page, geom, o) {
  * @param {{id:string}[]} pages
  * @param {Record<string, Object[]>} objects
  */
-export async function exportPdf(bytes, pages, objects, meta) {
+export async function exportPdf(bytes, pages, objects, meta, forms) {
     const hasObjects = pages.some((p) => objects[p.id]?.length);
-    if (!hasObjects && !meta) return bytes;
+    const hasForm = forms && (Object.keys(forms.values || {}).length || forms.flatten);
+    if (!hasObjects && !meta && !hasForm) return bytes;
     const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+    if (hasForm) await fillForm(doc, forms.values, { flatten: forms.flatten });
     for (let i = 0; i < pages.length; i++) {
         const objs = objects[pages[i].id];
         if (!objs?.length) continue;

@@ -11,6 +11,7 @@ import PlaceLayer from './layers/PlaceLayer';
 import EraseLayer from './layers/EraseLayer';
 import RedactLayer from './layers/RedactLayer';
 import SearchLayer from './layers/SearchLayer';
+import FormLayer from './layers/FormLayer';
 
 function PageView({ page, index, zoom, scrollRoot }) {
     const { state } = useEditor();
@@ -51,7 +52,8 @@ function PageView({ page, index, zoom, scrollRoot }) {
                 const ctx = off.getContext('2d');
                 ctx.fillStyle = '#fff';
                 ctx.fillRect(0, 0, off.width, off.height);
-                task = p.render({ canvasContext: ctx, viewport, annotationMode: 1 });
+                // ENABLE_FORMS: form alanlarının görünümü çizilmez, yerlerine FormLayer girişleri gelir
+                task = p.render({ canvasContext: ctx, viewport, annotationMode: 2 });
                 await task.promise;
                 if (cancelled || !canvasRef.current) return;
                 const c = canvasRef.current;
@@ -93,6 +95,7 @@ function PageView({ page, index, zoom, scrollRoot }) {
                 {state.search?.results?.length > 0 && <SearchLayer {...layerProps} />}
                 {(tool === 'redact' || state.redactions[page.id]?.length > 0) && <RedactLayer {...layerProps} interactive={tool === 'redact'} />}
                 <ObjectLayer {...layerProps} interactive={tool === 'select'} />
+                <FormLayer {...layerProps} interactive={tool === 'select'} />
                 {tool === 'edit' && visible && <EditLayer {...layerProps} />}
                 {tool === 'draw' && <DrawLayer {...layerProps} />}
                 {tool === 'highlight' && <HighlightLayer {...layerProps} />}

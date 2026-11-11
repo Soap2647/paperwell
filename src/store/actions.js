@@ -5,16 +5,11 @@ import { exportPdf } from '../core/export';
 import { renderPageToCanvas, releasePdfjsDoc } from '../core/render';
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
+import { saveFile, isDesktop } from '../platform';
 
+/** Web'de indirir, masaüstünde "Farklı kaydet" diyaloğu açar */
 export function downloadBlob(blob, name) {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    return saveFile(blob, name);
 }
 
 export const baseName = (name = 'belge') => name.replace(/\.(pdf|png|jpe?g|webp|gif|bmp)$/i, '');
@@ -89,7 +84,7 @@ export async function openFile(ed, file) {
             extra = { imageSize: r.imageSize, mime: r.mime };
         }
         const pages = await readPages(bytes);
-        ed.dispatch({ type: 'LOAD', doc: { name: file.name, kind, bytes, pages, ...extra } });
+        ed.dispatch({ type: 'LOAD', doc: { name: file.name, path: file.path || null, kind, bytes, pages, ...extra } });
     });
 }
 
@@ -116,25 +111,36 @@ function releasePdfjsDocLater(oldBytes, s) {
 
 export async function buildOutputPdf(ed) {
     const s = ed.get();
-    return exportPdf(s.doc.bytes, s.doc.pages, s.objects);
+    return exportPdf(s.doc.bytes, s.doc.pages, s.objects, undefined, s.forms);
 }
 
-export async function download(ed) {
+/**
+ * Kaydet / indir. Masaüstünde açılan PDF'in üzerine kaydeder (saveAs ile farklı kaydet);
+ * web'de indirir. Görseller her zaman yeni dosyaya kaydedilir.
+ */
+export async function download(ed, { saveAs = false } = {}) {
     const s = ed.get();
     if (!s.doc) return;
     await withBusy(ed, t('İşleniyor...'), async () => {
         const out = await buildOutputPdf(ed);
+        let saved;
         if (s.doc.kind === 'image') {
             const k = (s.doc.imageSize?.w || s.doc.pages[0].width) / s.doc.pages[0].width;
             const canvas = await renderPageToCanvas(out, 0, k, s.doc.mime === 'image/jpeg' ? '#fff' : null);
             const jpeg = s.doc.mime === 'image/jpeg';
             const blob = await new Promise((r) => canvas.toBlob(r, jpeg ? 'image/jpeg' : 'image/png', 0.95));
-            downloadBlob(blob, `${baseName(s.doc.name)}-paperwell.${jpeg ? 'jpg' : 'png'}`);
+            saved = await saveFile(blob, `${baseName(s.doc.name)}-paperwell.${jpeg ? 'jpg' : 'png'}`);
         } else {
-            downloadBlob(new Blob([out], { type: 'application/pdf' }), `${baseName(s.doc.name)}.pdf`);
+            const usePath = isDesktop && !saveAs && s.doc.path ? s.doc.path : undefined;
+            saved = await saveFile(out, `${baseName(s.doc.name)}.pdf`, { path: usePath });
+            if (saved && typeof saved === 'string') {
+                const name = saved.split(/[\\/]/).pop();
+                ed.dispatch({ type: 'SET', values: { doc: { ...ed.get().doc, path: saved, name } } });
+            }
         }
+        if (!saved) return;
         ed.dispatch({ type: 'SAVED' });
-        toast(t('İndirildi'), 'success');
+        toast(isDesktop ? t('Kaydedildi') : t('İndirildi'), 'success');
     });
 }
 

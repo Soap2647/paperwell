@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Upload, Type, Sparkles, ShieldCheck, PenLine, LayoutGrid, FileOutput, FilePlus2, Combine, Moon, Sun, Languages, Github } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { openFile, createBlank } from '../store/actions';
+import { isDesktop, pickFiles } from '../platform';
 import { t, getLocale, setLocale } from '../i18n';
 import { Button, IconButton, cx } from '../components/ui';
 import { useTheme, setTheme } from './theme';
@@ -59,7 +60,10 @@ export default function Landing() {
                 <section className="mt-10 max-w-3xl mx-auto">
                     <button
                         type="button"
-                        onClick={() => inputRef.current?.click()}
+                        onClick={async () => {
+                            if (isDesktop) { const files = await pickFiles(); onFiles(files); return; }
+                            inputRef.current?.click();
+                        }}
                         onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
                         onDragLeave={() => setDrag(false)}
                         onDrop={(e) => { e.preventDefault(); setDrag(false); onFiles(e.dataTransfer.files); }}

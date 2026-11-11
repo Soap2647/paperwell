@@ -36,6 +36,7 @@ const initialState = {
     busy: null, // { label, progress? }
     dialog: null,
     redactions: {}, // pageId → [{x,y,w,h}]
+    forms: { values: {}, flatten: false }, // form alanı değerleri (ad → değer)
     search: null, // { query, results: [], index }
     pendingImage: null, // yerleştirilecek görsel/imza dataURL
     loadId: 0,
@@ -158,6 +159,10 @@ function reducer(s, a) {
             try { localStorage.setItem('paperwell.opts', JSON.stringify(opts)); } catch { /* yoksay */ }
             return { ...s, opts };
         }
+        case 'SET_FORM':
+            return { ...s, forms: { ...s.forms, values: { ...s.forms.values, [a.name]: a.value } }, dirty: true };
+        case 'SET_FORM_FLATTEN':
+            return { ...s, forms: { ...s.forms, flatten: a.flatten } };
         case 'SET_REDACTIONS':
             return { ...s, redactions: { ...s.redactions, [a.pageId]: a.rects } };
         case 'SAVED':

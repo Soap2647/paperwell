@@ -24,15 +24,18 @@ export default function EditLayer({ index, zoom }) {
     const editing = state.editing?.pageIndex === index ? state.editing : null;
 
     if (!data) return null;
-    if (data.empty || (!data.lines.length && !data.images.length)) {
-        return (
-            <div className="absolute inset-x-0 top-3 flex justify-center pointer-events-none" style={{ transform: `scale(${1 / zoom})`, transformOrigin: 'top center' }}>
-                <span className="px-3 py-1.5 rounded-full bg-surface border border-line shadow-pop text-xs text-fg-2">
-                    {t('Bu sayfada düzenlenebilir metin yok (taranmış olabilir). Akıllı silgi ve Metin aracını kullanın.')}
-                </span>
-            </div>
-        );
-    }
+    // Metin yoksa (taranmış sayfa) OCR öner
+    const hint = (data.empty || !data.lines.length) && (
+        <div className="absolute inset-x-0 top-3 flex justify-center z-10" style={{ transform: `scale(${1 / zoom})`, transformOrigin: 'top center' }}>
+            <span className="pl-3 pr-1.5 py-1.5 rounded-full bg-surface border border-line shadow-pop text-xs text-fg-2 flex items-center gap-2">
+                {t('Bu sayfada düzenlenebilir metin yok (taranmış olabilir). Akıllı silgi ve Metin aracını kullanın.')}
+                <button type="button" className="px-2.5 h-6 rounded-full bg-accent text-white font-medium hover:bg-accent-hover" onClick={() => dispatch({ type: 'SET', values: { dialog: 'ocr' } })}>
+                    {t('OCR ile metne çevir')}
+                </button>
+            </span>
+        </div>
+    );
+    if (data.empty) return hint;
 
     const startLine = (entry) => {
         const g = data.model.geom;
@@ -59,6 +62,7 @@ export default function EditLayer({ index, zoom }) {
 
     return (
         <div className="absolute inset-0">
+            {hint}
             {data.images.map(({ img, rect }) => (
                 editing?.kind === 'image' && editing.imageId === img.id ? null : (
                     <button
