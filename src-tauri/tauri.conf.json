@@ -26,6 +26,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "msi"],
+    "resources": { "target/bundle-libs/DirectML.dll": "DirectML.dll" },
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
     "shortDescription": "PDF ve görsel editörü",
     "longDescription": "Paperwell: metni orijinal fontla düzenleyin, akıllı silgi, gerçek karartma, OCR, form doldurma, imza. Tamamen yerel.",
