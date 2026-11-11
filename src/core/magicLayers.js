@@ -1,5 +1,6 @@
 // Sihirli Katmanlar: düz bir afişi düzenlenebilir katmanlara ayırır.
-//  1) Yazılar → PaddleOCR (eğik yazı dahil) + Tesseract ile Türkçe harf doğrulama → stil (renk, boyut, açı, font) → metin katmanı
+//  1) Yazılar → PaddleOCR (eğik yazı dahil) + Tesseract ile Türkçe harf doğrulama → stil (renk, boyut, açı, font).
+//     Katman, afişin piksellerinden birebir kesilir (font değişmez); OCR metni ve tahmini stil, "metni düzenle" için saklanır.
 //  2) Nesneler/grafikler → SAM 2 ızgara ("her şeyi segmente et") + kararlılık / grafik-mi / belirginlik süzgeci → şeffaf PNG katmanı
 //  3) Arka plan → yazı ve nesnelerin yeri doldurulur (büyük alanlar LaMa, küçükler MI-GAN)
 import { detectText, recognize, cropRotated, rectCorners } from './textDetect';
@@ -448,7 +449,8 @@ function cutElement(img, W, H, c, mask) {
         const l = nearHere ? sampleLogits(c.logits, (gx + 0.5) / W, (gy + 0.5) / H) : -10;
         const a = 255 * sigmoid(2 * l);
         const si = (gy * W + gx) * 4, oi = (y * w + x) * 4;
-        out.data[oi] = img[si]; out.data[oi + 1] = img[si + 1]; out.data[oi + 2] = img[si + 2]; out.data[oi + 3] = a;
+        // şeffaf zeminli görselde özgün alfa da korunur
+        out.data[oi] = img[si]; out.data[oi + 1] = img[si + 1]; out.data[oi + 2] = img[si + 2]; out.data[oi + 3] = (a * img[si + 3]) / 255;
         if (a > 8) { if (x < ax0) ax0 = x; if (x > ax1) ax1 = x; if (y < ay0) ay0 = y; if (y > ay1) ay1 = y; }
         if (l > -2.5) hole[gy * W + gx] = 1;
     }
@@ -553,9 +555,69 @@ export async function magicLayers(canvas, { fill = 'best', onProgress } = {}) {
     const cut = elements.map((e) => cutElement(img, W, H, e, mask)).filter(Boolean);
 
     onProgress?.(0.7, 'fill');
+    const orig = img.slice();
     await fillHoles(img, W, H, mask, { best: fill === 'best', onProgress: step(0.7, 1, 'fill') });
+    fillAlpha(img, W, H, mask);
     ctx.putImageData(imgData, 0, 0);
-    return { background: ctx.canvas, texts: keptTexts, elements: cut };
+    keptTexts.forEach((t) => { t.layer = cutText(orig, img, W, H, t, textMasks[texts.indexOf(t)]); });
+    return { background: ctx.canvas, texts: keptTexts.filter((t) => t.layer), elements: cut };
+}
+
+/**
+ * Şeffaf zeminli görselde (logo PNG'si gibi) doldurulan deliklerin alfasını çevredeki alfadan tahmin eder:
+ * yazının arkası şeffafsa delik de şeffaf olur (yoksa silinen yazı zeminde hayalet gibi kalır).
+ */
+function fillAlpha(img, W, H, mask) {
+    let opaque = true;
+    for (let i = 3; i < img.length; i += 4 * 97) if (img[i] < 250) { opaque = false; break; }
+    if (opaque) return;
+    // normalleştirilmiş kutu bulanıklığı (integral görüntü): yalnız deliğin dışındaki piksellerin alfası sayılır
+    const r = Math.max(8, Math.round(Math.max(W, H) * 0.02));
+    const S = new Float64Array((W + 1) * (H + 1)), N = new Float64Array((W + 1) * (H + 1));
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x, v = mask[i] ? 0 : 1, j = (y + 1) * (W + 1) + x + 1;
+        S[j] = img[i * 4 + 3] * v + S[j - 1] + S[j - W - 1] - S[j - W - 2];
+        N[j] = v + N[j - 1] + N[j - W - 1] - N[j - W - 2];
+    }
+    const box = (A, x0, y0, x1, y1) => A[y1 * (W + 1) + x1] - A[y0 * (W + 1) + x1] - A[y1 * (W + 1) + x0] + A[y0 * (W + 1) + x0];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (!mask[i]) continue;
+        const x0 = Math.max(0, x - r), y0 = Math.max(0, y - r), x1 = Math.min(W, x + r + 1), y1 = Math.min(H, y + r + 1);
+        const n = box(N, x0, y0, x1, y1);
+        if (n) img[i * 4 + 3] = box(S, x0, y0, x1, y1) / n;
+    }
+}
+
+/**
+ * Yazıyı özgün piksellerden keser: doldurulmuş zeminin (bg) üstüne konunca özgün görüntüyü (orig) verecek
+ * alfa ve renk hesaplanır (alfa: zeminden yazı rengine doğru kayma; renk: karışımdan geri çözülür).
+ * Böylece font, kenar yumuşatma, degrade ve kontur aynen korunur.
+ */
+function cutText(orig, bg, W, H, t, m) {
+    let x0 = W, y0 = H, x1 = -1, y1 = -1;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (m[y * W + x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    if (x1 < 0) return null;
+    const w = x1 - x0 + 1, h = y1 - y0 + 1;
+    const out = new ImageData(w, h);
+    const C = t.fgColor;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const i = (y0 + y) * W + x0 + x;
+        if (!m[i]) continue;
+        const o = (y * w + x) * 4;
+        // zemin burada şeffafsa yazı pikseli olduğu gibi alınır
+        if (bg[i * 4 + 3] < 128) { for (let c = 0; c < 4; c++) out.data[o + c] = orig[i * 4 + c]; continue; }
+        const I = [orig[i * 4], orig[i * 4 + 1], orig[i * 4 + 2]], B = [bg[i * 4], bg[i * 4 + 1], bg[i * 4 + 2]];
+        // alfa: zeminden uzaklığın, yazı renginin zeminden uzaklığına oranı (renk zemine çok yakınsa en az 30 birim)
+        const span = Math.hypot(C[0] - B[0], C[1] - B[1], C[2] - B[2]);
+        const a = Math.min(1, Math.hypot(I[0] - B[0], I[1] - B[1], I[2] - B[2]) / Math.max(30, span));
+        if (a < 0.03) continue;
+        for (let c = 0; c < 3; c++) out.data[o + c] = (I[c] - (1 - a) * B[c]) / a;
+        out.data[o + 3] = Math.round(a * 255);
+    }
+    const cv = new OffscreenCanvas(w, h);
+    cv.getContext('2d').putImageData(out, 0, 0);
+    return { canvas: cv, x: x0, y: y0, w, h };
 }
 
 /** Metin bulgusunu, sayfa görünüm birimlerinde metin nesnesine çevirir (k: görünüm birimi / canvas pikseli) */

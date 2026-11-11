@@ -55,12 +55,18 @@ export async function runMagicLayers(ed, { fill = 'best' } = {}) {
 
         const k = page.width / canvas.width;
         const layers = [];
+        const image = async (c, name, extra) => {
+            const src = await new Promise((r) => { c.canvas.convertToBlob({ type: 'image/png' }).then((b) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); });
+            return { id: newId('ob'), type: 'image', x: c.x * k, y: c.y * k, w: c.w * k, h: c.h * k, src, opacity: 1, name, ...extra };
+        };
         // büyük nesneler altta, küçükler üstte; yazılar en üstte
-        for (const e of [...res.elements].sort((a, b) => b.area - a.area)) {
-            const src = await new Promise((r) => { e.canvas.convertToBlob({ type: 'image/png' }).then((b) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); });
-            layers.push({ id: newId('ob'), type: 'image', x: e.x * k, y: e.y * k, w: e.w * k, h: e.h * k, src, opacity: 1, name: t('Nesne') });
+        for (const e of [...res.elements].sort((a, b) => b.area - a.area)) layers.push(await image(e, t('Nesne')));
+        // yazı afişin kendi pikselleriyle (font aynen); "Metni düzenle" tahmini fontla canlı metne çevirir
+        // (textSource konumu görsel katmana göreli: katman taşınsa da metin yerinde açılır)
+        for (const tx of res.texts) {
+            const o = textToObject(tx, k);
+            layers.push(await image(tx.layer, tx.text, { textSource: { ...o, x: o.x - tx.layer.x * k, y: o.y - tx.layer.y * k } }));
         }
-        for (const tx of res.texts) layers.push({ id: newId('ob'), ...textToObject(tx, k) });
 
         ed.dispatch({ type: 'SET_TOOL', tool: 'select' });
         ed.dispatch({ type: 'COMMIT', bytes, pages, objects: { ...s.objects, [page.id]: [...(s.objects[page.id] || []), ...layers] } });

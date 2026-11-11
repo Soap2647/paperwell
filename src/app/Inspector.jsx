@@ -200,7 +200,16 @@ function ObjectPanel({ o, pageId }) {
                     <>
                         {opacity}
                         {rotation}
-                        <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: o.id } })}>{t('Arka planı kaldır')}</Button>
+                        {o.textSource ? (
+                            <>
+                                <Button icon={Pen} onClick={() => update({ ...o.textSource, x: o.x + o.textSource.x, y: o.y + o.textSource.y, src: undefined, textSource: undefined })}>{t('Metni düzenle')}</Button>
+                                <p className="text-xs text-fg-3 leading-relaxed">
+                                    {t('Yazı şu an afişteki haliyle duruyor. Düzenlerseniz şu fontla yeniden yazılır:')} {FONT_FAMILIES[o.textSource.family]?.label}{o.textSource.bold ? `, ${t('Kalın').toLowerCase()}` : ''}{o.textSource.italic ? `, ${t('İtalik').toLowerCase()}` : ''}
+                                </p>
+                            </>
+                        ) : (
+                            <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: o.id } })}>{t('Arka planı kaldır')}</Button>
+                        )}
                     </>
                 )}
                 {o.type === 'note' && (

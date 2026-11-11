@@ -8,7 +8,8 @@ const EN = {
     'Renk': 'Color', 'Dolgu': 'Fill', 'Kenarlık': 'Stroke', 'Kalınlık': 'Width', 'Opaklık': 'Opacity', 'Boyut': 'Size', 'Font': 'Font',
     'Yok': 'None', 'Kalın': 'Bold', 'İtalik': 'Italic', 'Hizalama': 'Alignment', 'Çoğalt': 'Duplicate', 'Öne getir': 'Bring forward', 'Geriye gönder': 'Send backward',
     'Konum': 'Position', 'Değiştir': 'Replace', 'Ekle': 'Add', 'Ara': 'Search', 'Sayfa': 'Page', 'sayfa': 'pages', 'Tümü': 'All',
-    'Hızlandırma': 'Acceleration', 'Tarayıcı': 'Browser',
+    'Hızlandırma': 'Acceleration', 'Tarayıcı': 'Browser', 'Metni düzenle': 'Edit text',
+    'Yazı şu an afişteki haliyle duruyor. Düzenlerseniz şu fontla yeniden yazılır:': 'The text is kept exactly as in the poster. Editing re-types it in:',
     // Karşılama
     'PDF ve görselleriniz için özgür editör': 'The free editor for your PDFs and images',
     'Metni orijinal fontuyla düzenleyin, akıllı silgiyle istemediğiniz şeyleri yok edin, imzalayın, işaretleyin. Hepsi tarayıcınızda; dosyalarınız cihazınızdan hiç çıkmaz.': 'Edit text in its original font, wipe out anything with the magic eraser, sign and annotate. All in your browser; your files never leave your device.',
