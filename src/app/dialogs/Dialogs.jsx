@@ -10,6 +10,7 @@ import { t } from '../../i18n';
 import { TOOLS } from '../tools';
 import MergeDialog from './MergeDialog';
 import OcrDialog from './OcrDialog';
+import PrintDialog from './PrintDialog';
 import SignatureDialog from './SignatureDialog';
 
 function PositionGrid({ value, onChange, positions }) {
@@ -259,6 +260,7 @@ export default function Dialogs() {
             <PropertiesDialog open={d === 'properties'} onClose={close} />
             <ShortcutsDialog open={d === 'shortcuts'} onClose={close} />
             <OcrDialog open={d === 'ocr'} onClose={close} />
+            <PrintDialog open={d === 'print'} onClose={close} />
             <SignatureDialog
                 open={d === 'signature'}
                 onClose={close}
