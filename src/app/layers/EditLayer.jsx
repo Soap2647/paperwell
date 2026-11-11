@@ -119,10 +119,10 @@ function LineEditor({ entry, index, geom, editing, zoom }) {
             if (ref.current?.parentElement?.contains(e.target) || e.target.closest?.('[data-inspector]')) return;
             finishRef.current?.(true);
         };
-        window.addEventListener('nebula:line-edit', onCmd);
+        window.addEventListener('paperwell:line-edit', onCmd);
         window.addEventListener('pointerdown', onDown, true);
         return () => {
-            window.removeEventListener('nebula:line-edit', onCmd);
+            window.removeEventListener('paperwell:line-edit', onCmd);
             window.removeEventListener('pointerdown', onDown, true);
         };
     }, []);

@@ -1,4 +1,4 @@
-# Nebula PDF
+# Paperwell
 
 **Tarayıcıda çalışan, açık kaynak PDF ve görsel editörü.** Metni orijinal fontuyla yerinde düzenleyin, akıllı silgiyle istemediğiniz şeyi yok edin, hassas bilgiyi gerçekten karartın, imzalayın ve işaretleyin. Dosyalarınız cihazınızdan hiç çıkmaz: sunucu yok, hesap yok, reklam yok.
 
@@ -8,7 +8,7 @@
 
 | | |
 |---|---|
-| **Metni yerinde düzenle** | Satıra tıklayın, yazın. Nebula PDF içerik akışını kendisi çözümler; yeni karakterler gömülü fontta varsa metin **aynı fontla** yazılır, yoksa ölçüleri uyumlu bir font (Liberation Sans = Arial ölçüleri) kullanılır. Boyut, renk, kalın/italik değiştirilebilir. |
+| **Metni yerinde düzenle** | Satıra tıklayın, yazın. Paperwell içerik akışını kendisi çözümler; yeni karakterler gömülü fontta varsa metin **aynı fontla** yazılır, yoksa ölçüleri uyumlu bir font (Liberation Sans = Arial ölçüleri) kullanılır. Boyut, renk, kalın/italik değiştirilebilir. |
 | **Akıllı silgi** | Fırçayla boyayın, bırakın, silinsin. *Hızlı* mod (Telea onarma) belgeler ve düz arka planlar için anında ve çevrimdışı çalışır. *Yapay zekâ* modu [MI-GAN](https://github.com/Picsart-AI-Research/MI-GAN) modelini (~28 MB, bir kez) indirip fotoğraflarda nesne siler. Altındaki metin de dosyadan gerçekten kaldırılır. |
 | **Gerçek karartma** | Karartılan alandaki metin yalnızca örtülmez, **içerik akışından silinir**; kopyalanamaz, aranamaz. Metin arayıp tüm geçişleri tek seferde işaretleyebilirsiniz (IBAN, TC no...). |
 | **Görselleri düzenle** | Belgedeki mevcut görselleri taşıyın, boyutlandırın, silin ya da değiştirin. |

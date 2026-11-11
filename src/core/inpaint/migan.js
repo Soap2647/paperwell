@@ -2,7 +2,7 @@
 // Model ilk kullanımda indirilir (~28 MB) ve tarayıcı önbelleğinde saklanır. Görseller cihazdan çıkmaz.
 
 export const MIGAN_URL = 'https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx';
-const CACHE_NAME = 'nebula-models-v1';
+const CACHE_NAME = 'paperwell-models-v1';
 const SIZE = 512;
 
 let sessionPromise = null;

@@ -28,7 +28,7 @@ const initialState = {
     future: [],
     dirty: false,
     tool: 'select',
-    opts: load('nebula.opts', DEFAULT_OPTS),
+    opts: load('paperwell.opts', DEFAULT_OPTS),
     selected: null, // { pageId, id }
     editing: null, // { kind:'text', pageId, id } | { kind:'line', pageIndex, lineId } | { kind:'image', pageIndex, imageId }
     zoom: 1,
@@ -155,7 +155,7 @@ function reducer(s, a) {
             return { ...s, tool: a.tool, selected: null, editing: null, pendingImage: a.pendingImage ?? null };
         case 'SET_OPTS': {
             const opts = { ...s.opts, [a.tool]: { ...s.opts[a.tool], ...a.changes } };
-            try { localStorage.setItem('nebula.opts', JSON.stringify(opts)); } catch { /* yoksay */ }
+            try { localStorage.setItem('paperwell.opts', JSON.stringify(opts)); } catch { /* yoksay */ }
             return { ...s, opts };
         }
         case 'SET_REDACTIONS':

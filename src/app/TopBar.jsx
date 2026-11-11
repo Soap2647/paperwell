@@ -79,8 +79,8 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                         </button>
                     }
                     items={[
-                        { label: t('Genişliğe sığdır'), onClick: () => window.dispatchEvent(new CustomEvent('nebula:fit', { detail: 'width' })), shortcut: 'Ctrl+0' },
-                        { label: t('Sayfaya sığdır'), onClick: () => window.dispatchEvent(new CustomEvent('nebula:fit', { detail: 'page' })) },
+                        { label: t('Genişliğe sığdır'), onClick: () => window.dispatchEvent(new CustomEvent('paperwell:fit', { detail: 'width' })), shortcut: 'Ctrl+0' },
+                        { label: t('Sayfaya sığdır'), onClick: () => window.dispatchEvent(new CustomEvent('paperwell:fit', { detail: 'page' })) },
                         '-',
                         ...[0.5, 0.75, 1, 1.25, 1.5, 2, 3].map((z) => ({ label: `${z * 100}%`, onClick: () => setZoom(z), checked: Math.abs(state.zoom - z) < 0.01 })),
                     ]}

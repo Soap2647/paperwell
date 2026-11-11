@@ -64,7 +64,7 @@ export default function PagesPanel() {
             setSelected(new Set(pages.slice(a, b + 1).map((x) => x.id)));
         } else {
             setSelected(new Set());
-            window.dispatchEvent(new CustomEvent('nebula:goto', { detail: i }));
+            window.dispatchEvent(new CustomEvent('paperwell:goto', { detail: i }));
         }
     };
 

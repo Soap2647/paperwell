@@ -78,7 +78,7 @@ function LineEditPanel({ editing }) {
     const { dispatch } = useEditor();
     const style = editing.style;
     const set = (changes) => dispatch({ type: 'SET', values: { editing: { ...editing, style: { ...style, ...changes } } } });
-    const cmd = (detail) => window.dispatchEvent(new CustomEvent('nebula:line-edit', { detail }));
+    const cmd = (detail) => window.dispatchEvent(new CustomEvent('paperwell:line-edit', { detail }));
     return (
         <Section title={t('Düzenle')}>
             <Field label={t('Font')} hint={style.family === 'original' ? 'Orijinal fontta olmayan karakterler için benzer font otomatik kullanılır.' : undefined}>
@@ -304,8 +304,8 @@ function SignToolPanel() {
     const [sigs, setSigs] = useState(loadSignatures);
     useEffect(() => {
         const onChange = () => setSigs(loadSignatures());
-        window.addEventListener('nebula:signatures', onChange);
-        return () => window.removeEventListener('nebula:signatures', onChange);
+        window.addEventListener('paperwell:signatures', onChange);
+        return () => window.removeEventListener('paperwell:signatures', onChange);
     }, []);
     return (
         <>

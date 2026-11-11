@@ -37,7 +37,7 @@ export default function Editor() {
             if (mod && (key === 'y' || (key === 'z' && e.shiftKey))) { e.preventDefault(); dispatch({ type: 'REDO' }); return; }
             if (mod && (key === '=' || key === '+')) { e.preventDefault(); dispatch({ type: 'SET', values: { zoom: Math.min(5, s.zoom * 1.2) } }); return; }
             if (mod && key === '-') { e.preventDefault(); dispatch({ type: 'SET', values: { zoom: Math.max(0.2, s.zoom / 1.2) } }); return; }
-            if (mod && key === '0') { e.preventDefault(); window.dispatchEvent(new CustomEvent('nebula:fit', { detail: 'width' })); return; }
+            if (mod && key === '0') { e.preventDefault(); window.dispatchEvent(new CustomEvent('paperwell:fit', { detail: 'width' })); return; }
 
             const sel = s.selected && findObject(s.objects, s.selected.id);
             if (sel) {

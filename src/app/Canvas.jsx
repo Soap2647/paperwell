@@ -44,11 +44,11 @@ export default function Canvas() {
             const top = y === undefined ? el.offsetTop - PAD / 2 : el.offsetTop + y * get().zoom - sc.clientHeight / 3;
             sc.scrollTo({ top, behavior: 'smooth' });
         };
-        window.addEventListener('nebula:fit', onFit);
-        window.addEventListener('nebula:goto', onGoto);
+        window.addEventListener('paperwell:fit', onFit);
+        window.addEventListener('paperwell:goto', onGoto);
         return () => {
-            window.removeEventListener('nebula:fit', onFit);
-            window.removeEventListener('nebula:goto', onGoto);
+            window.removeEventListener('paperwell:fit', onFit);
+            window.removeEventListener('paperwell:goto', onGoto);
         };
     }, [fit]);
 

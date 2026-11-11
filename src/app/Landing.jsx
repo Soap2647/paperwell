@@ -35,7 +35,7 @@ export default function Landing() {
             <header className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                     <Logo className="w-8 h-8" />
-                    <span className="font-semibold text-[15px] tracking-tight">Nebula PDF</span>
+                    <span className="font-semibold text-[15px] tracking-tight">Paperwell</span>
                 </div>
                 <div className="flex items-center gap-1">
                     <IconButton icon={Languages} label={getLocale() === 'tr' ? 'English' : 'Türkçe'} onClick={() => setLocale(getLocale() === 'tr' ? 'en' : 'tr')} />

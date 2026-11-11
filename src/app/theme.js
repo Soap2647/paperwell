@@ -2,13 +2,13 @@
 import { useEffect, useSyncExternalStore } from 'react';
 
 let theme = (() => {
-    try { return localStorage.getItem('nebula.theme') || 'system'; } catch { return 'system'; }
+    try { return localStorage.getItem('paperwell.theme') || 'system'; } catch { return 'system'; }
 })();
 const listeners = new Set();
 
 export function setTheme(t) {
     theme = t;
-    try { localStorage.setItem('nebula.theme', t); } catch { /* yoksay */ }
+    try { localStorage.setItem('paperwell.theme', t); } catch { /* yoksay */ }
     listeners.forEach((fn) => fn());
 }
 

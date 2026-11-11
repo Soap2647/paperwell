@@ -129,7 +129,7 @@ export async function download(ed) {
             const canvas = await renderPageToCanvas(out, 0, k, s.doc.mime === 'image/jpeg' ? '#fff' : null);
             const jpeg = s.doc.mime === 'image/jpeg';
             const blob = await new Promise((r) => canvas.toBlob(r, jpeg ? 'image/jpeg' : 'image/png', 0.95));
-            downloadBlob(blob, `${baseName(s.doc.name)}-nebula.${jpeg ? 'jpg' : 'png'}`);
+            downloadBlob(blob, `${baseName(s.doc.name)}-paperwell.${jpeg ? 'jpg' : 'png'}`);
         } else {
             downloadBlob(new Blob([out], { type: 'application/pdf' }), `${baseName(s.doc.name)}.pdf`);
         }

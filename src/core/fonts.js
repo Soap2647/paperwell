@@ -30,15 +30,15 @@ function loadBytes(url) {
 
 /** Belgeye font gömer; aynı belge içinde önbellekli */
 export async function embedFallbackFont(doc, family = 'sans', bold = false, italic = false) {
-    if (!doc.__nebulaFonts) {
+    if (!doc.__paperwellFonts) {
         doc.registerFontkit(fontkit);
-        doc.__nebulaFonts = {};
+        doc.__paperwellFonts = {};
     }
     const url = fontUrl(family, bold, italic);
-    if (!doc.__nebulaFonts[url]) {
-        doc.__nebulaFonts[url] = doc.embedFont(await loadBytes(url), { subset: true });
+    if (!doc.__paperwellFonts[url]) {
+        doc.__paperwellFonts[url] = doc.embedFont(await loadBytes(url), { subset: true });
     }
-    return doc.__nebulaFonts[url];
+    return doc.__paperwellFonts[url];
 }
 
 /** Tarayıcıda düzenleme sırasında aynı fontları CSS ile göstermek için FontFace kaydı */

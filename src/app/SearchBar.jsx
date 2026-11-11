@@ -41,7 +41,7 @@ export default function SearchBar() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [query, state.doc.bytes]);
 
-    const goto = (r) => window.dispatchEvent(new CustomEvent('nebula:goto', { detail: { index: r.pageIndex, y: r.rect.y } }));
+    const goto = (r) => window.dispatchEvent(new CustomEvent('paperwell:goto', { detail: { index: r.pageIndex, y: r.rect.y } }));
 
     const step = (d) => {
         const n = search.results.length;

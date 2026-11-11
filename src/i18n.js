@@ -86,7 +86,7 @@ const EN = {
 
 let locale = (() => {
     try {
-        const saved = localStorage.getItem('nebula.locale');
+        const saved = localStorage.getItem('paperwell.locale');
         if (saved) return saved;
     } catch { /* yoksay */ }
     return typeof navigator !== 'undefined' && navigator.language?.toLowerCase().startsWith('tr') ? 'tr' : 'en';
@@ -102,7 +102,7 @@ export function getLocale() { return locale; }
 
 export function setLocale(l) {
     locale = l;
-    try { localStorage.setItem('nebula.locale', l); } catch { /* yoksay */ }
+    try { localStorage.setItem('paperwell.locale', l); } catch { /* yoksay */ }
     document.documentElement.lang = l;
     listeners.forEach((fn) => fn());
 }

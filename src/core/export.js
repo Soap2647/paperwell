@@ -169,7 +169,7 @@ async function drawObject(doc, page, geom, o) {
                 Subtype: 'Text',
                 Rect: [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)],
                 Contents: PDFHexString.fromText(o.text || ''),
-                T: PDFHexString.fromText(o.author || 'Nebula PDF'),
+                T: PDFHexString.fromText(o.author || 'Paperwell'),
                 Name: 'Comment',
                 C: hexToRgb01(o.color || '#facc15'),
                 F: 4,
@@ -204,7 +204,7 @@ export async function exportPdf(bytes, pages, objects, meta) {
         if (meta.subject !== undefined) doc.setSubject(meta.subject);
         if (meta.keywords !== undefined) doc.setKeywords(meta.keywords ? [meta.keywords] : []);
     }
-    doc.setProducer('Nebula PDF');
+    doc.setProducer('Paperwell');
     doc.setModificationDate(new Date());
     return doc.save();
 }

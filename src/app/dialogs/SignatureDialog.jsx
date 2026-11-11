@@ -6,14 +6,14 @@ import { Button, ColorPicker, Dialog, Segmented } from '../../components/ui';
 import { readImageFile } from '../imageFiles';
 import { t } from '../../i18n';
 
-const KEY = 'nebula.signatures';
+const KEY = 'paperwell.signatures';
 
 export function loadSignatures() {
     try { return JSON.parse(localStorage.getItem(KEY) || '[]'); } catch { return []; }
 }
 export function saveSignatures(list) {
     try { localStorage.setItem(KEY, JSON.stringify(list.slice(0, 8))); } catch { /* kota */ }
-    window.dispatchEvent(new Event('nebula:signatures'));
+    window.dispatchEvent(new Event('paperwell:signatures'));
 }
 
 const FONTS = ['"Segoe Script", "Brush Script MT", cursive', '"Lucida Handwriting", "Apple Chancery", cursive', 'Georgia, serif'];
