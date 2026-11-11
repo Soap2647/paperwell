@@ -117,6 +117,15 @@ const EN = {
     'Saç ve ince kenarlarda daha iyi; daha yavaş.': 'Better on hair and fine edges; slower.',
     'Arka plan': 'Background', 'Şeffaf': 'Transparent', 'Bulanık': 'Blurred', 'Bulanıklık': 'Blur',
     'Şeffaf sonuç PNG olarak indirilir.': 'A transparent result downloads as PNG.',
+    // Belge tarayıcı
+    'Belge tarayıcı': 'Document scanner', 'Belge tara': 'Scan document', 'Belge olarak tara': 'Scan as document',
+    'Fotoğraftaki belgenin köşeleri otomatik bulunur; gerekirse köşeleri sürükleyin. Her fotoğraf bir A4 sayfası olur.': 'The document corners are found automatically; drag them to adjust. Each photo becomes an A4 page.',
+    'Belge fotoğrafları ekleyin': 'Add document photos', 'Birden çok fotoğraf tek PDF olur': 'Several photos become one PDF',
+    'Köşeler bulunamadı; elle ayarlayın.': 'Corners not found; adjust them by hand.',
+    'Görünüm': 'Look', 'Renkli': 'Color', 'Gri': 'Grayscale', 'Siyah-beyaz': 'Black & white', 'Eşik': 'Threshold', 'Kontrast': 'Contrast',
+    'Metni tanı (OCR)': 'Recognize text (OCR)', 'PDF oluştur': 'Create PDF', 'Fotoğraf ekle': 'Add photo',
+    'Taranıyor...': 'Scanning...', 'Tarama': 'Scan', 'sayfa tarandı': 'pages scanned',
+    'Kaydedilmemiş değişiklikler kaybolacak. Devam edilsin mi?': 'Unsaved changes will be lost. Continue?',
 };
 
 let locale = (() => {

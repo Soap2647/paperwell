@@ -13,6 +13,7 @@ import OcrDialog from './OcrDialog';
 import PrintDialog from './PrintDialog';
 import SignatureDialog from './SignatureDialog';
 import BgRemoveDialog from './BgRemoveDialog';
+import ScanDialog from './ScanDialog';
 
 function PositionGrid({ value, onChange, positions }) {
     return (
@@ -263,6 +264,7 @@ export default function Dialogs() {
             <OcrDialog open={d === 'ocr'} onClose={close} />
             <PrintDialog open={d === 'print'} onClose={close} />
             <BgRemoveDialog open={d === 'bgremove'} onClose={close} />
+            <ScanDialog open={d === 'scan'} onClose={close} />
             <SignatureDialog
                 open={d === 'signature'}
                 onClose={close}

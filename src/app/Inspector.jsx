@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
     Bold, Italic, AlignLeft, AlignCenter, AlignRight, Trash2, Copy, ArrowUp, ArrowDown, Square, Circle, Minus, MoveRight,
-    Pen, Highlighter, Underline, Strikethrough, ImageUp, Plus, Check, X, Download, Sparkles, Zap, Search, ImageMinus,
+    Pen, Highlighter, Underline, Strikethrough, ImageUp, Plus, Check, X, Download, Sparkles, Zap, Search, ImageMinus, ScanLine,
 } from 'lucide-react';
 import { useEditor, findObject } from '../store/editor';
 import { commitBytes, withBusy } from '../store/actions';
@@ -296,6 +296,7 @@ function ImageDocActions() {
     return (
         <div className="flex flex-col gap-2">
             <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: null } })}>{t('Arka planı kaldır')}</Button>
+            <Button icon={ScanLine} onClick={() => dispatch({ type: 'SET', values: { dialog: 'scan' } })}>{t('Belge olarak tara')}</Button>
         </div>
     );
 }

@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test": "node tests/make-fixtures.mjs && esbuild tests/engine.test.mjs --bundle --platform=node --format=esm --outfile=tests/out/engine.mjs --log-level=warning && node tests/out/engine.mjs && esbuild tests/export.test.mjs --bundle --platform=node --format=esm --outfile=tests/out/export.mjs --log-level=warning && node tests/out/export.mjs",
+    "test": "node tests/make-fixtures.mjs && esbuild tests/engine.test.mjs --bundle --platform=node --format=esm --outfile=tests/out/engine.mjs --log-level=warning && node tests/out/engine.mjs && esbuild tests/scanner.test.mjs --bundle --platform=node --format=esm --outfile=tests/out/scanner.mjs --log-level=warning && node tests/out/scanner.mjs && esbuild tests/export.test.mjs --bundle --platform=node --format=esm --outfile=tests/out/export.mjs --log-level=warning && node tests/out/export.mjs",
     "predev": "node scripts/copy-vendor.mjs",
     "prebuild": "node scripts/copy-vendor.mjs",
     "tauri:dev": "tauri dev",

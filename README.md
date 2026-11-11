@@ -14,6 +14,7 @@
 | **Arka planı kaldır** | Görsel belgede ya da seçili görsel nesnesinde (ör. imza fotoğrafı) tek tıkla: şeffaf, düz renk ya da bulanık arka plan. *Hızlı* model [U²-Netp](https://github.com/xuebinqin/U-2-Net) (Apache-2.0, ~5 MB), *Kaliteli* model [IS-Net/DIS](https://github.com/xuebinqin/DIS) (Apache-2.0, ~179 MB); ilk kullanımda onayla iner. Şeffaf sonuç PNG olarak indirilir. |
 | **Gerçek karartma** | Karartılan alandaki metin yalnızca örtülmez, **içerik akışından silinir**; kopyalanamaz, aranamaz. Metin arayıp tüm geçişleri tek seferde işaretleyebilirsiniz (IBAN, TC no...). |
 | **OCR** | Taranmış belgeleri Tesseract ile (Türkçe + İngilizce) tanır: *aranabilir* yapar (görünmez metin katmanı) ya da *düzenlenebilir* yapar (taranmış yazı gerçek metne dönüşür). Motor ve dil verisi uygulamayla gelir, internet gerekmez. |
+| **Belge tarayıcı** | Telefonla çekilmiş belge fotoğraflarını tarayın: köşeler otomatik bulunur (sürükleyip düzeltebilirsiniz), perspektif düzeltilir, gölge temizlenir; *Orijinal / Renkli / Gri / Siyah-beyaz* görünüm ve kontrast. Birden çok fotoğraf tek A4 PDF olur, istenirse OCR ile aranabilir yapılır. Model gerekmez, tamamen yerel. |
 | **Form doldurma** | PDF formlarındaki metin, onay kutusu, seçenek ve açılır liste alanlarını doğrudan doldurun; Türkçe karakterler doğru görünür, istenirse form düzleştirilir. |
 | **Yazdır** | Normal, sayfa başına 2/4, kitapçık (ortadan zımbalı) yerleşim; A4/Letter/A3'e sığdırma; otomatik çift taraf basamayan yazıcılar için elle çift taraf sihirbazı. |
 | **Görselleri düzenle** | Belgedeki mevcut görselleri taşıyın, boyutlandırın, silin ya da değiştirin. |
@@ -66,6 +67,7 @@ src/core/eraser.js   akıllı silgi hattı
 src/core/segment.js  SlimSAM nesne maskesi; grab.js nesneyi katmana çıkarma
 src/core/modelStore.js  model indirme / Cache Storage / ONNX oturumları
 src/core/bgremove.js arka plan kaldırma (U²-Netp / IS-Net)
+src/core/scanner.js  belge tarayıcı: köşe algılama (eşik + bölge büyütme + Hough), perspektif, filtreler
 src/core/export.js   katman nesnelerinin vektör olarak gömülmesi
 src/core/ocr.js      Tesseract.js ile OCR (aranabilir / düzenlenebilir)
 src/core/forms.js    AcroForm okuma/doldurma
