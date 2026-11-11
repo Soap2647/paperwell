@@ -1,9 +1,10 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { download } from '../store/actions';
+import { runMagicLayers } from './magicLayersAction';
 import { isDesktop } from '../platform';
 import { t, getLocale, setLocale } from '../i18n';
 import { Button, IconButton, Menu, Tooltip } from '../components/ui';
@@ -32,6 +33,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
         { label: t('Filigran'), icon: Stamp, onClick: () => open('watermark') },
         { label: t('Sayfa numaraları'), icon: Hash, onClick: () => open('pagenumbers'), disabled: isImage },
         { label: t('Metin tanıma (OCR)'), icon: ScanText, onClick: () => open('ocr') },
+        { label: t('Sihirli Katmanlar'), icon: Layers, onClick: () => runMagicLayers(ed) },
         { label: t('Belge tarayıcı'), icon: ScanLine, onClick: () => open('scan') },
         { label: t('Arka planı kaldır'), icon: ImageMinus, onClick: () => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: null } }), disabled: !isImage },
         '-',

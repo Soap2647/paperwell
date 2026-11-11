@@ -73,6 +73,18 @@ export async function recognizePage(bytes, pageIndex, { langs = ['tur', 'eng'], 
     return { lines, canvas, scale, geom };
 }
 
+/** Tek satırlık bir kesiti tanır (PSM 7). Görsel katmanlarda Türkçe harfleri doğrulamak için. */
+export async function recognizeLine(canvas, langs = ['tur', 'eng']) {
+    const worker = await getWorker(langs);
+    await worker.setParameters({ tessedit_pageseg_mode: '7' });
+    try {
+        const { data } = await worker.recognize(canvas);
+        return { text: data.text.trim(), conf: data.confidence / 100 };
+    } finally {
+        await worker.setParameters({ tessedit_pageseg_mode: '3' });
+    }
+}
+
 /** Satır yüksekliğinden yazı boyutunu tahmin eder (büyük harf/çıkıntı yüksekliği ≈ 0,72 em) */
 function estimateSize(line) {
     const asc = Math.max(1, line.baseline - line.y);

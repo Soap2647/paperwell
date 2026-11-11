@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
     Bold, Italic, AlignLeft, AlignCenter, AlignRight, Trash2, Copy, ArrowUp, ArrowDown, Square, Circle, Minus, MoveRight,
-    Pen, Highlighter, Underline, Strikethrough, ImageUp, Plus, Check, X, Download, Sparkles, Zap, Search, ImageMinus, ScanLine,
+    Pen, Highlighter, Underline, Strikethrough, ImageUp, Plus, Check, X, Download, Sparkles, Zap, Search, ImageMinus, ScanLine, Layers,
 } from 'lucide-react';
 import { useEditor, findObject } from '../store/editor';
 import { commitBytes, withBusy } from '../store/actions';
@@ -19,6 +19,7 @@ import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import { TOOLS } from './tools';
 import LayersPanel from './LayersPanel';
+import { runMagicLayers } from './magicLayersAction';
 import { readImageFile } from './imageFiles';
 import { loadSignatures, saveSignatures } from './dialogs/SignatureDialog';
 
@@ -298,9 +299,11 @@ function DocSummary() {
 }
 
 function ImageDocActions() {
-    const { dispatch } = useEditor();
+    const ed = useEditor();
+    const { dispatch } = ed;
     return (
         <div className="flex flex-col gap-2">
+            <Button variant="primary" icon={Layers} onClick={() => runMagicLayers(ed)}>{t('Sihirli Katmanlar')}</Button>
             <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: null } })}>{t('Arka planı kaldır')}</Button>
             <Button icon={ScanLine} onClick={() => dispatch({ type: 'SET', values: { dialog: 'scan' } })}>{t('Belge olarak tara')}</Button>
         </div>

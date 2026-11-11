@@ -128,6 +128,10 @@ const EN = {
     'Kaydedilmemiş değişiklikler kaybolacak. Devam edilsin mi?': 'Unsaved changes will be lost. Continue?',
     // Katmanlar
     'Katmanlar': 'Layers', 'Kilitle': 'Lock', 'Kilidi aç': 'Unlock', 'Gizle': 'Hide', 'Göster': 'Show',
+    'Sihirli Katmanlar': 'Magic Layers', 'Katmanlara ayrılıyor...': 'Splitting into layers...',
+    'Sihirli Katmanlar için yapay zekâ modelleri indirilecek. Bir kez iner, sonra çevrimdışı çalışır.': 'AI models will be downloaded for Magic Layers. They download once, then work offline.',
+    'Nesneler bulunuyor...': 'Finding objects...', 'Yazılar okunuyor...': 'Reading text...', 'Arka plan dolduruluyor...': 'Filling the background...',
+    'yazı': 'text', 'nesne katmanı oluşturuldu': 'object layers created',
 };
 
 let locale = (() => {
