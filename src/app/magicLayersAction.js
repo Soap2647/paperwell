@@ -7,7 +7,8 @@ import { isTextModelCached, loadTextModels, OCR_BYTES } from '../core/textDetect
 import { isSam2Cached, loadSam2, SAM2_BYTES } from '../core/segment2';
 import { isLamaCached, loadLama, LAMA_BYTES } from '../core/inpaint/lama';
 import { isMiganCached, loadMigan } from '../core/inpaint/migan';
-import { magicLayers, textToObject } from '../core/magicLayers';
+import { magicLayers, textToObject, layerdAvailable } from '../core/magicLayers';
+import { BG_MODELS, isBgModelCached, loadBgModel } from '../core/bgremove';
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 
@@ -15,9 +16,13 @@ const STAGES = { segment: 'Nesneler bulunuyor...', text: 'Yazılar okunuyor...',
 
 export async function runMagicLayers(ed, { fill = 'best' } = {}) {
     // Eksik modelleri listele, kullanıcı onayıyla indir
+    // masaüstü GPU'da nesneleri LayerD ayırır (SAM 2 gerekmez)
+    const layerd = await layerdAvailable();
     const needs = [
         [await isTextModelCached(), OCR_BYTES, loadTextModels],
-        [await isSam2Cached(), SAM2_BYTES, loadSam2],
+        ...(layerd
+            ? [[await isBgModelCached('layerd'), BG_MODELS.layerd.bytes, (p) => loadBgModel('layerd', p)], [await isBgModelCached('birefnetLite'), BG_MODELS.birefnetLite.bytes, (p) => loadBgModel('birefnetLite', p)]]
+            : [[await isSam2Cached(), SAM2_BYTES, loadSam2]]),
         [await isMiganCached(), 28e6, loadMigan],
         [fill !== 'best' || (await isLamaCached()), LAMA_BYTES, loadLama],
     ].filter(([cached]) => !cached);
@@ -59,8 +64,8 @@ export async function runMagicLayers(ed, { fill = 'best' } = {}) {
             const src = await new Promise((r) => { c.canvas.convertToBlob({ type: 'image/png' }).then((b) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); });
             return { id: newId('ob'), type: 'image', x: c.x * k, y: c.y * k, w: c.w * k, h: c.h * k, src, opacity: 1, name, ...extra };
         };
-        // büyük nesneler altta, küçükler üstte; yazılar en üstte
-        for (const e of [...res.elements].sort((a, b) => b.area - a.area)) layers.push(await image(e, t('Nesne')));
+        // derindeki (LayerD'nin sonraki turlarında çıkan) ve büyük nesneler altta, küçükler üstte; yazılar en üstte
+        for (const e of [...res.elements].sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0) || b.area - a.area)) layers.push(await image(e, t('Nesne')));
         // yazı afişin kendi pikselleriyle (font aynen); "Metni düzenle" tahmini fontla canlı metne çevirir
         // (textSource konumu görsel katmana göreli: katman taşınsa da metin yerinde açılır)
         for (const tx of res.texts) {

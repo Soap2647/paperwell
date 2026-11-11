@@ -1,7 +1,8 @@
 // Sihirli Katmanlar: düz bir afişi düzenlenebilir katmanlara ayırır.
 //  1) Yazılar → PaddleOCR (eğik yazı dahil) + Tesseract ile Türkçe harf doğrulama → stil (renk, boyut, açı, font).
 //     Katman, afişin piksellerinden birebir kesilir (font değişmez); OCR metni ve tahmini stil, "metni düzenle" için saklanır.
-//  2) Nesneler/grafikler → SAM 2 ızgara ("her şeyi segmente et") + kararlılık / grafik-mi / belirginlik süzgeci → şeffaf PNG katmanı
+//  2) Nesneler/grafikler → masaüstü GPU'da LayerD (tasarımlar için eğitilmiş katman ayırıcı, en fazla 3 derinlik);
+//     diğer yollarda SAM 2 ızgara ("her şeyi segmente et") + kararlılık / grafik-mi / belirginlik süzgeci → şeffaf PNG katmanı
 //  3) Arka plan → yazı ve nesnelerin yeri doldurulur (büyük alanlar LaMa, küçükler MI-GAN)
 import { detectText, recognize, cropRotated, rectCorners } from './textDetect';
 import { recognizeLine } from './ocr';
@@ -9,6 +10,12 @@ import { encodeImage2, decode2 } from './segment2';
 import { inpaintMigan } from './inpaint/migan';
 import { inpaintLama } from './inpaint/lama';
 import { FONT_FAMILIES } from './fonts';
+import { predictAlpha, isBgModelCached } from './bgremove';
+import { getBackend } from './inference';
+
+/** Masaüstü GPU'da ve model indirilmişse nesneler LayerD ile ayrılır */
+export const layerdAvailable = async () => (await getBackend()).kind === 'gpu';
+const layerdReady = async () => (await layerdAvailable()) && (await isBgModelCached('layerd'));
 
 const sigmoid = (x) => 1 / (1 + Math.exp(-x));
 
@@ -524,7 +531,8 @@ async function fillHoles(img, W, H, mask, { best, onProgress }) {
  * @param {{fill?: 'best'|'fast', onProgress?: (p:number, stage:string)=>void}} opts
  * @returns {Promise<{background: OffscreenCanvas, texts: object[], elements: object[]}>} canvas pikseli koordinatları
  */
-export async function magicLayers(canvas, { fill = 'best', onProgress } = {}) {
+export async function magicLayers(canvas, { fill = 'best', onProgress, engine } = {}) {
+    if ((engine ?? ((await layerdReady()) ? 'layerd' : 'sam')) === 'layerd') return magicLayersLayerD(canvas, { fill, onProgress });
     const W = canvas.width, H = canvas.height;
     const step = (from, to, stage) => (p) => onProgress?.(from + (to - from) * (p ?? 0), stage);
 
@@ -563,6 +571,157 @@ export async function magicLayers(canvas, { fill = 'best', onProgress } = {}) {
     return { background: ctx.canvas, texts: keptTexts.filter((t) => t.layer), elements: cut };
 }
 
+// ─── LayerD yolu (masaüstü GPU) ─────────────────────────────────────────────
+
+/**
+ * LayerD akışı: model görselin en üst katmanını (yazılar, şekiller, süsler) alfa olarak verir; bağlı bileşenler öğe olur,
+ * altı doldurulur ve kalan görsel için tekrarlanır (en fazla 3 derinlik). Yazılar OCR ile bulunup birebir kesilir.
+ */
+async function magicLayersLayerD(canvas, { fill, onProgress }) {
+    const W = canvas.width, H = canvas.height;
+    const step = (from, to, stage) => (p) => onProgress?.(from + (to - from) * (p ?? 0), stage);
+    onProgress?.(0, 'text');
+    const texts = await extractTexts(canvas, { onProgress: step(0, 0.2, 'text') });
+    const ctx = new OffscreenCanvas(W, H).getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(canvas, 0, 0);
+    const imgData = ctx.getImageData(0, 0, W, H);
+    const img = imgData.data;
+    const orig = img.slice();
+    const textMasks = texts.map((t) => { const m = new Uint8Array(W * H); markTextPixels(img, W, H, t, m); return m; });
+    const textMask = new Uint8Array(W * H);
+    for (const m of textMasks) for (let i = 0; i < W * H; i++) if (m[i]) textMask[i] = 1;
+
+    const elements = [];
+    let textBg = null;
+    const grow = Math.max(2, Math.round(Math.max(W, H) * 0.004));
+    const current = () => {
+        const cur = new OffscreenCanvas(W, H);
+        cur.getContext('2d').putImageData(new ImageData(img.slice(), W, H), 0, 0);
+        return cur;
+    };
+    // öğeleri ayır, yerlerini doldur; deliğe yalnız tutulan öğeler (yumuşak kenarlarıyla) ve ilk turda yazılar girer
+    const peel = async (alpha, groups, depth, from, to) => {
+        const hole = new Uint8Array(W * H);
+        for (const g of groups) for (const i of g.pixels) hole[i] = 1;
+        if (depth === 0) for (let i = 0; i < W * H; i++) if (textMask[i]) hole[i] = 1;
+        const mask = new Uint8Array(W * H);
+        dilateInto(hole, W, H, grow, mask);
+        const before = img.slice();
+        await fillHoles(img, W, H, mask, { best: fill === 'best', onProgress: step(from, to, 'fill') });
+        fillAlpha(img, W, H, mask);
+        if (depth === 0) textBg = img.slice();
+        for (const g of groups) { const e = unblendLayer(before, img, alpha, g, W, H); if (e) elements.push({ ...e, depth }); }
+    };
+    let depth = 0;
+    for (; depth < 3; depth++) {
+        const from = 0.2 + depth * 0.2;
+        onProgress?.(from, 'segment');
+        const alpha = await predictAlpha(current(), 'layerd');
+        const groups = layerGroups(alpha, depth === 0 ? textMask : null, W, H);
+        if (!groups.length && depth > 0) break;
+        await peel(alpha, groups, depth, from + 0.04, from + 0.2);
+    }
+    // LayerD fotoğraftaki nesneleri (top, kişi) zemin sayar: kalan görselde belirgin nesneyi BiRefNet lite'a sor.
+    // Kenara değmeyen, makul boyutlu olanlar ayrı katman olur (model indirilmemişse adım atlanır).
+    if (await isBgModelCached('birefnetLite')) {
+        onProgress?.(0.8, 'segment');
+        const sal = await predictAlpha(current(), 'birefnetLite');
+        const subjects = layerGroups(sal, null, W, H).filter((g) => {
+            const touches = g.x0 <= 1 || g.y0 <= 1 || g.x1 >= W - 2 || g.y1 >= H - 2;
+            return !touches && g.n > W * H * 0.002 && g.n < W * H * 0.35;
+        });
+        if (subjects.length) await peel(sal, subjects, depth, 0.84, 1);
+    }
+    ctx.putImageData(imgData, 0, 0);
+    texts.forEach((t, i) => { t.layer = cutText(orig, textBg, W, H, t, textMasks[i]); });
+    return { background: ctx.canvas, texts: texts.filter((t) => t.layer), elements };
+}
+
+/**
+ * Alfa > 0.5 bağlı bileşenleri (yazı pikselleri hariç); birbirine çok yakın parçalar (logo çubukları gibi) tek öğe,
+ * küçük parçalar yakındaki öğeye katılır. Yumuşak kenar pikselleri (0 < alfa ≤ 0.5) kutusuna düşen öğeye eklenir.
+ */
+function layerGroups(alpha, exclude, W, H) {
+    const lab = new Int32Array(W * H);
+    const comps = [];
+    for (let s = 0; s < W * H; s++) {
+        if (lab[s] || alpha[s] <= 128 || (exclude && exclude[s])) continue;
+        const id = comps.length + 1, st = [s];
+        lab[s] = id;
+        let x0 = W, y0 = H, x1 = -1, y1 = -1, n = 0;
+        while (st.length) {
+            const p = st.pop(), x = p % W, y = (p / W) | 0;
+            n++;
+            if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+            for (const q of [p - 1, p + 1, p - W, p + W]) {
+                if (q < 0 || q >= W * H || lab[q] || alpha[q] <= 128 || (exclude && exclude[q]) || Math.abs((q % W) - x) > 1) continue;
+                lab[q] = id; st.push(q);
+            }
+        }
+        comps.push({ id, x0, y0, x1, y1, n });
+    }
+    // birbirine yakın bileşenler tek öğe (kutular arası boşluk ≤ gap; LayerD çekirdek ölçeğiyle aynı oran)
+    const gap = Math.max(3, Math.round(Math.max(W, H) * 0.015));
+    const parent = comps.map((_, i) => i);
+    const root = (i) => { while (parent[i] !== i) i = parent[i] = parent[parent[i]]; return i; };
+    for (let a = 0; a < comps.length; a++) for (let b = a + 1; b < comps.length; b++) {
+        const A = comps[a], B = comps[b];
+        if (Math.max(A.x0, B.x0) - Math.min(A.x1, B.x1) <= gap && Math.max(A.y0, B.y0) - Math.min(A.y1, B.y1) <= gap) parent[root(b)] = root(a);
+    }
+    const groups = new Map();
+    comps.forEach((c, i) => {
+        const r = root(i);
+        const g = groups.get(r) || { x0: W, y0: H, x1: -1, y1: -1, n: 0, ids: new Set() };
+        g.x0 = Math.min(g.x0, c.x0); g.y0 = Math.min(g.y0, c.y0); g.x1 = Math.max(g.x1, c.x1); g.y1 = Math.max(g.y1, c.y1);
+        g.n += c.n; g.ids.add(c.id);
+        groups.set(r, g);
+    });
+    // küçük parçalar (konfeti, süs çizgisi) yakındaki öğeye katılır; yakında öğe yoksa yeterince büyükse kendi öğesi olur
+    const minN = W * H * 0.0002, tinyN = Math.max(40, W * H * 0.00002), pad = Math.max(2, Math.round(Math.max(W, H) * 0.003));
+    const all = [...groups.values()], big = all.filter((g) => g.n >= minN);
+    const boxGap = (A, B) => Math.max(A.x0 - B.x1, B.x0 - A.x1, A.y0 - B.y1, B.y0 - A.y1);
+    for (const g of all.filter((q) => q.n < minN)) {
+        let host = null, best = gap * 2;
+        for (const b of big) { const d = boxGap(g, b); if (d <= best) { best = d; host = b; } }
+        if (host) {
+            host.x0 = Math.min(host.x0, g.x0); host.y0 = Math.min(host.y0, g.y0); host.x1 = Math.max(host.x1, g.x1); host.y1 = Math.max(host.y1, g.y1);
+            host.n += g.n; for (const id of g.ids) host.ids.add(id);
+        } else if (g.n >= tinyN) big.push(g);
+    }
+    const out = [];
+    for (const g of big) {
+        g.x0 = Math.max(0, g.x0 - pad); g.y0 = Math.max(0, g.y0 - pad); g.x1 = Math.min(W - 1, g.x1 + pad); g.y1 = Math.min(H - 1, g.y1 + pad);
+        g.pixels = [];
+        for (let y = g.y0; y <= g.y1; y++) for (let x = g.x0; x <= g.x1; x++) {
+            const i = y * W + x;
+            if (g.ids.has(lab[i]) || (!lab[i] && alpha[i] > 3 && !(exclude && exclude[i]))) g.pixels.push(i);
+        }
+        out.push(g);
+    }
+    return out;
+}
+
+/** Öğeyi önceki görselden (before) çözer: alfa modelden, renk doldurulmuş zeminle (bg) karışımdan geri hesaplanır */
+function unblendLayer(before, bg, alpha, g, W, H) {
+    const w = g.x1 - g.x0 + 1, h = g.y1 - g.y0 + 1;
+    const out = new ImageData(w, h);
+    for (const i of g.pixels) {
+        const o = ((((i / W) | 0) - g.y0) * w + (i % W) - g.x0) * 4;
+        if (bg[i * 4 + 3] < 128) {
+            for (let c = 0; c < 3; c++) out.data[o + c] = before[i * 4 + c];
+            out.data[o + 3] = Math.min(before[i * 4 + 3], alpha[i]);
+            continue;
+        }
+        // çok düşük alfada renk çözümü kararsız: en az 0.05 alınır
+        const a = Math.max(0.05, alpha[i] / 255);
+        for (let c = 0; c < 3; c++) out.data[o + c] = (before[i * 4 + c] - (1 - a) * bg[i * 4 + c]) / a;
+        out.data[o + 3] = alpha[i];
+    }
+    const cv = new OffscreenCanvas(w, h);
+    cv.getContext('2d').putImageData(out, 0, 0);
+    return { canvas: cv, x: g.x0, y: g.y0, w, h, area: g.n / (W * H) };
+}
+
 /**
  * Şeffaf zeminli görselde (logo PNG'si gibi) doldurulan deliklerin alfasını çevredeki alfadan tahmin eder:
  * yazının arkası şeffafsa delik de şeffaf olur (yoksa silinen yazı zeminde hayalet gibi kalır).
@@ -585,7 +744,8 @@ function fillAlpha(img, W, H, mask) {
         if (!mask[i]) continue;
         const x0 = Math.max(0, x - r), y0 = Math.max(0, y - r), x1 = Math.min(W, x + r + 1), y1 = Math.min(H, y + r + 1);
         const n = box(N, x0, y0, x1, y1);
-        if (n) img[i * 4 + 3] = box(S, x0, y0, x1, y1) / n;
+        // zemin, üstündeki katmanlarla birleşmiş halden (şu anki alfa) daha opak olamaz: araları şeffaf parçalar boşlukta kalır
+        if (n) img[i * 4 + 3] = Math.min(img[i * 4 + 3], box(S, x0, y0, x1, y1) / n);
     }
 }
 

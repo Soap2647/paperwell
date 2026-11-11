@@ -18,6 +18,18 @@ export const BG_MODELS = {
         url: 'https://huggingface.co/onnx-community/BiRefNet-ONNX/resolve/534d3c82d3bb8b2f0867db6dfbc3a525b8e42f67/onnx/model_fp16.onnx',
         size: 1024, bytes: 489.7e6, std: [0.229, 0.224, 0.225], sigmoid: true, exclusive: true,
     },
+    // onnx-community/BiRefNet_lite-ONNX (MIT, fp32, 224 MB): Sihirli Katmanlar'da fotoğraftaki belirgin nesne.
+    // CPU'da çalışır: 6 GB kartta LayerD ile aynı anda ekran kartı belleğine sığmıyor (taşınca her şey yavaşlıyor)
+    birefnetLite: {
+        url: 'https://huggingface.co/onnx-community/BiRefNet_lite-ONNX/resolve/de15b22ba131738a16dff04aab8bdf8dc32e3ac1/onnx/model.onnx',
+        size: 1024, bytes: 224e6, std: [0.229, 0.224, 0.225], sigmoid: true, gpu: false,
+    },
+    // LayerD (CyberAgent, ICCV 2025, Apache-2.0): tasarımın en üst katmanını veren BiRefNet; Sihirli Katmanlar, yalnız GPU.
+    // cyberagent/layerd-birefnet ağırlıkları BiRefNet ONNX grafiğine yerleştirilip fp16'ya çevrildi (scripts/layerd_onnx.py).
+    layerd: {
+        url: 'https://huggingface.co/paperwell/layerd-birefnet-onnx/resolve/main/onnx/model_fp16.onnx',
+        size: 1024, bytes: 489.7e6, std: [0.229, 0.224, 0.225], sigmoid: true,
+    },
 };
 
 const biRefNetHere = async () => (await getBackend()).kind === 'gpu';
@@ -75,7 +87,7 @@ export function isBgModelCached(quality) {
 export function loadBgModel(quality, onProgress) {
     if (!sessions[quality]) {
         const m = BG_MODELS[quality];
-        sessions[quality] = openModel([{ url: m.url, bytes: m.bytes }], onProgress, { exclusive: !!m.exclusive }).catch((e) => {
+        sessions[quality] = openModel([{ url: m.url, bytes: m.bytes }], onProgress, { exclusive: !!m.exclusive, gpu: m.gpu !== false }).catch((e) => {
             delete sessions[quality];
             throw e;
         });
