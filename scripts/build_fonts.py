@@ -1,7 +1,7 @@
 # Sihirli Katmanlar'ın font eşleştirmesi ve metin nesneleri için açık lisanslı (OFL / Apache-2.0) Google Fonts paketi.
-# google/fonts deposunun sabit bir sürümünden (GFONTS_COMMIT) aileleri alır; her aile için Regular (400) ve varsa Bold (700)
-# statik örnek üretir (değişken fontlarda fontTools instancer), Latin + Türkçe karakterlere kırpar.
-# Çıktı: public/fonts/g/<Dosya>-Regular|Bold.ttf, lisans metinleri public/fonts/g/licenses/, src/core/fontCatalog.js
+# google/fonts deposunun sabit bir sürümünden (GFONTS_COMMIT) aileleri alır; her aile için 400/500/600/700 ağırlıklarından
+# bulunanların statik örneğini üretir (değişken fontlarda fontTools instancer), Latin + Türkçe karakterlere kırpar.
+# Çıktı: public/fonts/g/<Dosya>-Regular|Medium|SemiBold|Bold.ttf, lisans metinleri public/fonts/g/licenses/, src/core/fontCatalog.js
 #
 #   git clone --filter=blob:none --no-checkout https://github.com/google/fonts.git gfonts
 #   (gfonts içinde) git sparse-checkout set <aşağıdaki klasörler>; git checkout <GFONTS_COMMIT>
@@ -36,6 +36,7 @@ FAMILIES = [
     ('robotomono', 'ofl/robotomono', 'Roboto Mono', 'mono'),
 ]
 # Latin + Latin-1 + Latin Genişletilmiş-A (ğ ş ı İ) + genel noktalama + para birimleri (₺ €)
+WEIGHTS = {400: 'Regular', 500: 'Medium', 600: 'SemiBold', 700: 'Bold'}
 UNICODES = list(range(0x20, 0x7F)) + list(range(0xA0, 0x180)) + list(range(0x2010, 0x2040)) + [0x20AC, 0x20BA, 0x2122]
 
 src_root = sys.argv[1]
@@ -56,7 +57,7 @@ def variable_file(folder):
 
 
 def make(folder, weight):
-    style = 'Regular' if weight == 400 else 'Bold'
+    style = WEIGHTS[weight]
     path = static_file(folder, style)
     if path:
         font = TTFont(path)
@@ -88,18 +89,19 @@ for key, rel, label, kind in FAMILIES:
     folder = os.path.join(src_root, rel)
     file = label.replace(' ', '')
     weights = []
-    for w in (400, 700):
+    for w in WEIGHTS:
         f = make(folder, w)
         if f is None:
             continue
-        name = f'{file}-{"Regular" if w == 400 else "Bold"}.ttf'
+        name = f'{file}-{WEIGHTS[w]}.ttf'
+        f.recalcTimestamp = False  # deterministik: aynı kaynaktan aynı bayt (git'te gereksiz değişiklik olmasın)
         f.save(os.path.join(out_dir, name))
         total += os.path.getsize(os.path.join(out_dir, name))
         weights.append(w)
     lic = next((p for p in (os.path.join(folder, 'OFL.txt'), os.path.join(folder, 'LICENSE.txt')) if os.path.exists(p)), None)
     assert lic, f'lisans yok: {rel}'
     shutil.copy(lic, os.path.join(lic_dir, f'{file}.txt'))
-    catalog[key] = {'label': label, 'file': file, 'kind': kind, 'bold': 700 in weights}
+    catalog[key] = {'label': label, 'file': file, 'kind': kind, 'weights': weights}
     print(f'{label:20s} {weights}')
 
 with open(os.path.join(repo, 'src', 'core', 'fontCatalog.js'), 'w', encoding='utf-8', newline='\n') as fh:

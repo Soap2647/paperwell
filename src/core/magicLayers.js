@@ -74,10 +74,11 @@ const CANDIDATES = [];
 for (const family of ['sans', 'serif']) for (const bold of [false, true]) for (const italic of [false, true]) CANDIDATES.push({ family, bold, italic });
 for (const [family, f] of Object.entries(FONT_FAMILIES)) {
     if (f.base) continue;
-    for (const bold of f.bold ? [false, true] : [false]) CANDIDATES.push({ family, bold, italic: false });
+    for (const weight of f.weights) CANDIDATES.push({ family, bold: weight >= 600, weight, italic: false });
 }
 
-const fontCss = ({ family, bold, italic }, size) => `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${size}px ${FONT_FAMILIES[family].css}`;
+const fontKey = (c) => `${c.family}|${c.weight ?? (c.bold ? 700 : 400)}|${c.italic ? 1 : 0}`;
+const fontCss = ({ family, bold, italic, weight }, size) => `${italic ? 'italic ' : ''}${weight ?? (bold ? 700 : 400)} ${size}px ${FONT_FAMILIES[family].css}`;
 
 /** 3×3 kutu bulanıklığı (bir pikselik hizalama kaymasına dayanıklı karşılaştırma için) */
 function blur3(a, w, h) {
@@ -107,14 +108,17 @@ function matchFont(text, crop, tp) {
     const A = blur3(ink, iw, ih);
     const mc = new OffscreenCanvas(8, 8).getContext('2d');
     const ranking = [];
-    for (const cand of CANDIDATES) {
+    const tried = new Set();
+    const score = (cand) => {
+        if (tried.has(fontKey(cand))) return;
+        tried.add(fontKey(cand));
         mc.font = fontCss(cand, 100);
         const m = mc.measureText(text);
         const w100 = m.actualBoundingBoxLeft + m.actualBoundingBoxRight, h100 = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
-        if (!w100 || !h100) continue;
+        if (!w100 || !h100) return;
         const size = (iw / w100) * 100, ch = (h100 * size) / 100;
         // oranı çok farklı adaylar çizilmeden elenir
-        if (ch > ih * 1.6 || ch < ih / 1.6) continue;
+        if (ch > ih * 1.6 || ch < ih / 1.6) return;
         const Hc = Math.max(ih, Math.ceil(ch));
         const c = new OffscreenCanvas(iw, Hc), ctx = c.getContext('2d');
         ctx.font = fontCss(cand, size);
@@ -134,16 +138,18 @@ function matchFont(text, crop, tp) {
             }
         }
         // italik yalnız temel ailelerde aday; dik yazı çok daha yaygın
-        const score = (mx ? mn / mx : 0) - (cand.italic ? 0.03 : 0);
-        ranking.push({ ...cand, size, score, sy: ih / (mm.actualBoundingBoxAscent + mm.actualBoundingBoxDescent || ih) });
-    }
+        ranking.push({ ...cand, size, score: (mx ? mn / mx : 0) - (cand.italic ? 0.03 : 0), sy: ih / (mm.actualBoundingBoxAscent + mm.actualBoundingBoxDescent || ih) });
+    };
+    // 1. aşama: her ailenin yalnız normal ve kalını; 2. aşama: en iyi 4 ailenin ara ağırlıkları (500, 600)
+    for (const cand of CANDIDATES) if (!cand.weight || cand.weight === 400 || cand.weight === 700 || FONT_FAMILIES[cand.family].weights.length === 1) score(cand);
+    const top = [...new Set([...ranking].sort((a, b) => b.score - a.score).map((c) => c.family))].slice(0, 4);
+    for (const cand of CANDIDATES) if (top.includes(cand.family)) score(cand);
     if (!ranking.length) return null;
     ranking.sort((a, b) => b.score - a.score);
     // en iyi 10 aday saklanır: aynı stildeki satırlar ortak font seçerken kullanılır
     return { ...ranking[0], ranking: ranking.slice(0, 10) };
 }
 
-const fontKey = (c) => `${c.family}|${c.bold ? 1 : 0}|${c.italic ? 1 : 0}`;
 
 /**
  * Aynı stildeki satırlar (benzer yükseklik ve renk: ör. program maddeleri, saatler) ortak fontu oyla seçer:
@@ -1001,7 +1007,7 @@ export function textToObject(t, k) {
     const ca = Math.cos(t.angle), sa = Math.sin(t.angle);
     const cx = t.inkCenter[0] - (dx * ca - dy * sa), cy = t.inkCenter[1] - (dx * sa + dy * ca);
     return {
-        type: 'text', text: t.text, family: t.font.family, bold: t.font.bold, italic: t.font.italic,
+        type: 'text', text: t.text, family: t.font.family, bold: t.font.bold, weight: t.font.weight, italic: t.font.italic,
         size: size * k, color: t.color, align: 'left', lineHeight: lh, opacity: 1,
         x: (cx - w / 2) * k, y: (cy - h / 2) * k, w: w * k, h: h * k,
         // ölçüm gürültüsü: neredeyse yatay yazıyı tam yatay yap

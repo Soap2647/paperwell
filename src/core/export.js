@@ -150,7 +150,7 @@ async function drawObject(doc, page, geom, o) {
             break;
         }
         case 'text': {
-            const font = await embedFallbackFont(doc, o.family, o.bold, o.italic);
+            const font = await embedFallbackFont(doc, o.family, o.bold, o.italic, o.weight);
             const rot = rotator(o);
             const lh = o.lineHeight || 1.25;
             const asc = font.heightAtSize(o.size, { descender: false });

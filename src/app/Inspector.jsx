@@ -156,7 +156,7 @@ function ObjectPanel({ o, pageId }) {
                         <Field label={t('Font')}><FamilySelect value={o.family} onChange={(family) => update({ family })} /></Field>
                         <div className="flex items-end gap-3">
                             <Field label={t('Boyut')}><NumberInput value={o.size} onChange={(size) => update({ size })} suffix="pt" /></Field>
-                            <StyleToggles bold={o.bold} italic={o.italic} onChange={update} />
+                            <StyleToggles bold={o.bold} italic={o.italic} onChange={(c) => update('bold' in c ? { ...c, weight: undefined } : c)} />
                         </div>
                         <Field label={t('Hizalama')}>
                             <Segmented value={o.align || 'left'} onChange={(align) => update({ align })} options={[{ value: 'left', icon: AlignLeft }, { value: 'center', icon: AlignCenter }, { value: 'right', icon: AlignRight }]} />
@@ -168,7 +168,7 @@ function ObjectPanel({ o, pageId }) {
                         {o.rasterSource && (
                             <Button icon={ImageUp} onClick={() => {
                                 const r = o.rasterSource;
-                                const textSource = { type: 'text', text: o.text, family: o.family, bold: o.bold, italic: o.italic, size: o.size, color: o.color, align: o.align, lineHeight: o.lineHeight, opacity: o.opacity, rotation: o.rotation, w: o.w, h: o.h, x: -r.x, y: -r.y };
+                                const textSource = { type: 'text', text: o.text, family: o.family, bold: o.bold, weight: o.weight, italic: o.italic, size: o.size, color: o.color, align: o.align, lineHeight: o.lineHeight, opacity: o.opacity, rotation: o.rotation, w: o.w, h: o.h, x: -r.x, y: -r.y };
                                 update({ type: 'image', src: r.src, x: o.x + r.x, y: o.y + r.y, w: r.w, h: r.h, rotation: 0, textSource, rasterSource: undefined });
                             }}>{t('Afişteki haline dön')}</Button>
                         )}
@@ -214,7 +214,7 @@ function ObjectPanel({ o, pageId }) {
                                     update({ ...o.textSource, x, y, src: undefined, textSource: undefined, rasterSource: { src: o.src, x: o.x - x, y: o.y - y, w: o.w, h: o.h } });
                                 }}>{t('Metni düzenle')}</Button>
                                 <p className="text-xs text-fg-3 leading-relaxed">
-                                    {t('Yazı şu an afişteki haliyle duruyor. Düzenlerseniz şu fontla yeniden yazılır:')} {FONT_FAMILIES[o.textSource.family]?.label}{o.textSource.bold ? `, ${t('Kalın').toLowerCase()}` : ''}{o.textSource.italic ? `, ${t('İtalik').toLowerCase()}` : ''}
+                                    {t('Yazı şu an afişteki haliyle duruyor. Düzenlerseniz şu fontla yeniden yazılır:')} {FONT_FAMILIES[o.textSource.family]?.label}{o.textSource.weight && o.textSource.weight !== 400 && o.textSource.weight !== 700 ? ` ${o.textSource.weight}` : o.textSource.bold ? `, ${t('Kalın').toLowerCase()}` : ''}{o.textSource.italic ? `, ${t('İtalik').toLowerCase()}` : ''}
                                 </p>
                             </>
                         ) : (

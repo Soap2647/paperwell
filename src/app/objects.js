@@ -1,5 +1,5 @@
 // Katman nesneleri için geometri yardımcıları
-import { FONT_FAMILIES } from '../core/fonts';
+import { FONT_FAMILIES, effectiveWeight } from '../core/fonts';
 
 export function bbox(o) {
     switch (o.type) {
@@ -60,7 +60,7 @@ export function textStyle(o) {
         fontFamily: (FONT_FAMILIES[o.family] || FONT_FAMILIES.sans).css,
         fontSize: o.size,
         lineHeight: o.lineHeight || 1.25,
-        fontWeight: o.bold ? 700 : 400,
+        fontWeight: effectiveWeight(o),
         fontStyle: o.italic ? 'italic' : 'normal',
         color: o.color,
         textAlign: o.align || 'left',
