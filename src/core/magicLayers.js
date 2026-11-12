@@ -6,6 +6,7 @@
 //  3) Arka plan → yazı ve nesnelerin yeri doldurulur (büyük alanlar LaMa, küçükler MI-GAN)
 import { detectText, recognize, cropRotated, rectCorners } from './textDetect';
 import { recognizeLine } from './ocr';
+import { mergeDiacritics } from './ocrMerge';
 import { encodeImage2, decode2, isSam2Cached } from './segment2';
 import { inpaintMigan } from './inpaint/migan';
 import { inpaintLama } from './inpaint/lama';
@@ -20,25 +21,6 @@ const layerdReady = async () => (await layerdAvailable()) && (await isBgModelCac
 const sigmoid = (x) => 1 / (1 + Math.exp(-x));
 
 // ─── Yazılar ─────────────────────────────────────────────────────────────────
-
-const FOLD = { ı: 'i', İ: 'i', ş: 's', Ş: 's', ğ: 'g', Ğ: 'g', ü: 'u', Ü: 'u', ö: 'o', Ö: 'o', ç: 'c', Ç: 'c', I: 'i' };
-const fold = (s) => s.replace(/[ıİşŞğĞüÜöÖçÇI]/g, (c) => FOLD[c]).toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
-
-/** Paddle metnini, aynı harflere sahipse (aksansız karşılaştırma) Tesseract'ın Türkçe harfli kelimeleriyle düzeltir */
-export function mergeDiacritics(paddle, tess) {
-    const a = paddle.split(/\s+/), b = tess.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w));
-    tess = b.join(' ');
-    if (a.length !== b.length) return fold(paddle) === fold(tess) ? tess : paddle;
-    const clean = (w) => w.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}.,:!?-]+$/gu, '');
-    // Türkçe/Latin dışı harf (ör. Yunanca ς) içeren kelimede, uzunluğu tutan Tesseract kelimesi daha güvenilir
-    const foreign = (w) => /[^\p{Script=Latin}\p{N}\p{P}\p{S}]/u.test(w);
-    return a.map((w, i) => {
-        const t = clean(b[i]);
-        if (fold(w) && fold(w) === fold(t)) return t || w;
-        if (foreign(w) && t.length === w.length && !foreign(t)) return t;
-        return w;
-    }).join(' ');
-}
 
 function kmeans2(px) {
     // px: [r,g,b][]; başlangıç: kenar ortalaması (zemin) ve ona en uzak piksel (yazı)
