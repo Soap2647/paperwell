@@ -68,11 +68,14 @@ export async function runMagicLayers(ed, { fill = 'best' } = {}) {
         };
         // derindeki (LayerD'nin sonraki turlarında çıkan) ve büyük nesneler altta, küçükler üstte; yazılar en üstte
         for (const e of [...res.elements].sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0) || b.area - a.area)) layers.push(await image(e, t('Nesne')));
-        // yazı afişin kendi pikselleriyle (font aynen); "Metni düzenle" tahmini fontla canlı metne çevirir
-        // (textSource konumu görsel katmana göreli: katman taşınsa da metin yerinde açılır)
+        // Font eşleşmesi güçlüyse yazı canlı metin olur (afişteki pikselleri rasterSource'ta: "Afişteki haline dön").
+        // Süslü / konturlu yazılar afişin kendi pikselleriyle kalır; "Metni düzenle" tahmini fontla canlı metne çevirir.
+        // (iki yönde de saklanan konum diğerine göreli: katman taşınsa da karşılığı yerinde açılır)
         for (const tx of res.texts) {
             const o = textToObject(tx, k);
-            layers.push(await image(tx.layer, tx.text, { textSource: { ...o, x: o.x - tx.layer.x * k, y: o.y - tx.layer.y * k } }));
+            const img = await image(tx.layer, tx.text, {});
+            if (tx.live) layers.push({ id: newId('ob'), ...o, name: tx.text, rasterSource: { src: img.src, x: img.x - o.x, y: img.y - o.y, w: img.w, h: img.h } });
+            else layers.push({ ...img, textSource: { ...o, x: o.x - img.x, y: o.y - img.y } });
         }
 
         ed.dispatch({ type: 'SET_TOOL', tool: 'select' });

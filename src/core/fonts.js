@@ -1,17 +1,26 @@
 // Gömülebilir Unicode fontlar (Türkçe dahil). pdf-lib'in standart fontları ğ, ş, ı, İ yazamaz.
 import fontkit from '@pdf-lib/fontkit';
+import { FONT_CATALOG } from './fontCatalog';
 
+const GENERIC = { sans: 'sans-serif', serif: 'serif', display: 'sans-serif', script: 'cursive', mono: 'monospace' };
+
+/** Temel aileler (dört biçim) + açık lisanslı Google Fonts kataloğu (Regular/Bold; italik tarayıcıda eğik çizilir) */
 export const FONT_FAMILIES = {
-    sans: { label: 'Sans (Arial uyumlu)', css: '"Liberation Sans", Arial, Helvetica, sans-serif', file: 'LiberationSans' },
-    serif: { label: 'Serif', css: '"DejaVu Serif", Georgia, "Times New Roman", serif', file: 'DejaVuSerif' },
-    mono: { label: 'Mono', css: '"DejaVu Sans Mono", Consolas, monospace', file: 'DejaVuSansMono' },
+    sans: { label: 'Sans (Arial uyumlu)', css: '"Liberation Sans", Arial, Helvetica, sans-serif', file: 'LiberationSans', kind: 'sans', base: true },
+    serif: { label: 'Serif', css: '"DejaVu Serif", Georgia, "Times New Roman", serif', file: 'DejaVuSerif', kind: 'serif', base: true },
+    mono: { label: 'Mono', css: '"DejaVu Sans Mono", Consolas, monospace', file: 'DejaVuSansMono', kind: 'mono', base: true },
+    ...Object.fromEntries(Object.entries(FONT_CATALOG).map(([k, f]) => [k, {
+        // yüklü bir yerel fontla karışmasın diye ön ekli ad
+        label: f.label, css: `"PW ${f.label}", ${GENERIC[f.kind]}`, cssName: `PW ${f.label}`, file: f.file, kind: f.kind, bold: f.bold,
+    }])),
 };
 
 const variantSuffix = (bold, italic) => (bold && italic ? 'BoldItalic' : bold ? 'Bold' : italic ? 'Italic' : 'Regular');
 
 export function fontUrl(family, bold, italic) {
     const f = FONT_FAMILIES[family] || FONT_FAMILIES.sans;
-    return `/fonts/${f.file}-${variantSuffix(bold, italic)}.ttf`;
+    if (f.base) return `/fonts/${f.file}-${variantSuffix(bold, italic)}.ttf`;
+    return `/fonts/g/${f.file}-${bold && f.bold ? 'Bold' : 'Regular'}.ttf`;
 }
 
 let loader = async (url) => {
@@ -43,6 +52,7 @@ export async function embedFallbackFont(doc, family = 'sans', bold = false, ital
 
 /** Tarayıcıda düzenleme sırasında aynı fontları CSS ile göstermek için FontFace kaydı */
 let cssRegistered = false;
+const faces = [];
 export function registerCssFonts() {
     if (cssRegistered || typeof document === 'undefined') return;
     cssRegistered = true;
@@ -57,4 +67,18 @@ export function registerCssFonts() {
             document.fonts.add(face);
         }
     }
+    for (const [key, f] of Object.entries(FONT_FAMILIES)) {
+        if (f.base) continue;
+        for (const bold of f.bold ? [false, true] : [false]) {
+            const face = new FontFace(f.cssName, `url(${fontUrl(key, bold, false)})`, { weight: bold ? '700' : '400', display: 'swap' });
+            document.fonts.add(face);
+            faces.push(face);
+        }
+    }
+}
+
+/** Tüm katalog fontlarını yükler (font eşleştirmesinden önce: ölçüm yüklenmemiş fontla yapılmasın) */
+export async function loadAllFonts() {
+    registerCssFonts();
+    await Promise.all(faces.map((f) => f.load().catch(() => null)));
 }

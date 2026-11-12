@@ -10,7 +10,7 @@ import { mergeDiacritics } from './ocrMerge';
 import { encodeImage2, decode2, isSam2Cached } from './segment2';
 import { inpaintMigan } from './inpaint/migan';
 import { inpaintLama } from './inpaint/lama';
-import { FONT_FAMILIES } from './fonts';
+import { FONT_FAMILIES, loadAllFonts } from './fonts';
 import { predictAlpha, isBgModelCached } from './bgremove';
 import { getBackend } from './inference';
 
@@ -69,50 +69,123 @@ function textPixels(crop) {
     return { ink, fg: core.length ? [med(0), med(1), med(2)] : fg, bg, contrast: Math.sqrt(dist(fg, bg)), box: x1 < 0 ? null : { x0, y0, x1: x1 + 1, y1: y1 + 1 } };
 }
 
+// Adaylar: temel aileler (italik dahil) + katalogdaki her aile, mevcut ağırlıklarıyla
 const CANDIDATES = [];
 for (const family of ['sans', 'serif']) for (const bold of [false, true]) for (const italic of [false, true]) CANDIDATES.push({ family, bold, italic });
+for (const [family, f] of Object.entries(FONT_FAMILIES)) {
+    if (f.base) continue;
+    for (const bold of f.bold ? [false, true] : [false]) CANDIDATES.push({ family, bold, italic: false });
+}
 
 const fontCss = ({ family, bold, italic }, size) => `${italic ? 'italic ' : ''}${bold ? 'bold ' : ''}${size}px ${FONT_FAMILIES[family].css}`;
 
-/** Yazının mürekkep izine en çok benzeyen font + boyut */
-function matchFont(text, ink, W, H, box) {
+/** 3×3 kutu bulanıklığı (bir pikselik hizalama kaymasına dayanıklı karşılaştırma için) */
+function blur3(a, w, h) {
+    const o = new Float32Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        let s = 0, n = 0;
+        for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) { s += a[yy * w + xx]; n++; }
+        o[y * w + x] = s / n;
+    }
+    return o;
+}
+
+/**
+ * Yazının mürekkep izine en çok benzeyen font + boyut.
+ * Yumuşak mürekkep haritası (her pikselin zeminden yazı rengine ne kadar kaydığı) ile adayın doğal oranında çizimi
+ * karşılaştırılır (yumuşak örtüşme: Σmin/Σmax): şekil, kalınlık ve en/boy oranı birlikte ölçülür.
+ * Aday mürekkep enine ölçeklenir, dikeyde ortalanır; gerilmez (gerilmek fontları ayırt ettiren oranı siler).
+ */
+function matchFont(text, crop, tp) {
+    const { box, fg, bg } = tp;
     const iw = box.x1 - box.x0, ih = box.y1 - box.y0;
+    if (iw < 2 || ih < 2) return null;
+    const px = crop.getContext('2d').getImageData(box.x0, box.y0, iw, ih).data;
+    const d = [fg[0] - bg[0], fg[1] - bg[1], fg[2] - bg[2]], dd = d[0] ** 2 + d[1] ** 2 + d[2] ** 2 || 1;
+    const ink = new Float32Array(iw * ih);
+    for (let i = 0; i < iw * ih; i++) ink[i] = Math.min(1, Math.max(0, ((px[i * 4] - bg[0]) * d[0] + (px[i * 4 + 1] - bg[1]) * d[1] + (px[i * 4 + 2] - bg[2]) * d[2]) / dd));
+    const A = blur3(ink, iw, ih);
     const mc = new OffscreenCanvas(8, 8).getContext('2d');
-    let best = null;
+    const ranking = [];
     for (const cand of CANDIDATES) {
         mc.font = fontCss(cand, 100);
         const m = mc.measureText(text);
-        const inkW100 = m.actualBoundingBoxLeft + m.actualBoundingBoxRight;
-        const inkH100 = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
-        if (!inkW100 || !inkH100) continue;
-        const size = (iw / inkW100) * 100;
-        // Mürekkep izini çizip örtüşmeyi ölç (ölçeği eni tutturur; boy uyumu da puanlanır)
-        const c = new OffscreenCanvas(iw, ih);
-        const ctx = c.getContext('2d');
+        const w100 = m.actualBoundingBoxLeft + m.actualBoundingBoxRight, h100 = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
+        if (!w100 || !h100) continue;
+        const size = (iw / w100) * 100, ch = (h100 * size) / 100;
+        // oranı çok farklı adaylar çizilmeden elenir
+        if (ch > ih * 1.6 || ch < ih / 1.6) continue;
+        const Hc = Math.max(ih, Math.ceil(ch));
+        const c = new OffscreenCanvas(iw, Hc), ctx = c.getContext('2d');
         ctx.font = fontCss(cand, size);
-        ctx.fillStyle = '#000';
         const mm = ctx.measureText(text);
-        ctx.setTransform(1, 0, 0, ih / (mm.actualBoundingBoxAscent + mm.actualBoundingBoxDescent || 1), 0, 0);
-        ctx.fillText(text, mm.actualBoundingBoxLeft, mm.actualBoundingBoxAscent);
-        const r = ctx.getImageData(0, 0, iw, ih).data;
-        let inter = 0, uni = 0;
-        for (let y = 0; y < ih; y++) for (let x = 0; x < iw; x++) {
-            const a = r[(y * iw + x) * 4 + 3] > 110, b = ink[(y + box.y0) * W + (x + box.x0)] === 1;
-            if (a && b) inter++;
-            if (a || b) uni++;
+        ctx.fillText(text, mm.actualBoundingBoxLeft, mm.actualBoundingBoxAscent + (Hc - (mm.actualBoundingBoxAscent + mm.actualBoundingBoxDescent)) / 2);
+        const r = ctx.getImageData(0, 0, iw, Hc).data;
+        const C = new Float32Array(iw * Hc);
+        for (let i = 0; i < iw * Hc; i++) C[i] = r[i * 4 + 3] / 255;
+        const B = blur3(C, iw, Hc);
+        const off = ((Hc - ih) / 2) | 0;
+        let mn = 0, mx = 0;
+        for (let y = 0; y < Hc; y++) {
+            const yy = y - off;
+            for (let x = 0; x < iw; x++) {
+                const a = yy >= 0 && yy < ih ? A[yy * iw + x] : 0, b = B[y * iw + x];
+                mn += Math.min(a, b); mx += Math.max(a, b);
+            }
         }
-        const heightFit = Math.min(ih, mm.actualBoundingBoxAscent + mm.actualBoundingBoxDescent) / Math.max(ih, mm.actualBoundingBoxAscent + mm.actualBoundingBoxDescent);
-        // Afişlerde sans ve dik yazı çok daha yaygın: küçük farklarda onları seç
-        const score = (uni ? inter / uni : 0) * (0.6 + 0.4 * heightFit) - (cand.family === 'serif' ? 0.06 : 0) - (cand.italic ? 0.04 : 0);
-        if (!best || score > best.score) best = { ...cand, size, score, sy: ih / (mm.actualBoundingBoxAscent + mm.actualBoundingBoxDescent || ih) };
+        // italik yalnız temel ailelerde aday; dik yazı çok daha yaygın
+        const score = (mx ? mn / mx : 0) - (cand.italic ? 0.03 : 0);
+        ranking.push({ ...cand, size, score, sy: ih / (mm.actualBoundingBoxAscent + mm.actualBoundingBoxDescent || ih) });
     }
-    return best;
+    if (!ranking.length) return null;
+    ranking.sort((a, b) => b.score - a.score);
+    // en iyi 10 aday saklanır: aynı stildeki satırlar ortak font seçerken kullanılır
+    return { ...ranking[0], ranking: ranking.slice(0, 10) };
 }
+
+const fontKey = (c) => `${c.family}|${c.bold ? 1 : 0}|${c.italic ? 1 : 0}`;
+
+/**
+ * Aynı stildeki satırlar (benzer yükseklik ve renk: ör. program maddeleri, saatler) ortak fontu oyla seçer:
+ * uzun satırların oyu daha ağır basar; kısa satırlar ("19:00") tek başına güvenilmez, gruba uyar.
+ */
+function harmonizeFonts(lines) {
+    const own = (t) => t.font.ranking[0].score;
+    const alnum = (t) => (t.text.match(/[\p{L}\p{N}]/gu) || []).length;
+    // canlı metin kararı her satırın kendi en iyi eşleşmesiyle; aynı stildeki satırlarda ortalamayla (hepsi aynı karar)
+    for (const t of lines) t.live = own(t) >= LIVE_TEXT_SCORE && alnum(t) >= 2;
+    const groups = [];
+    for (const t of lines) {
+        const h = t.box.h;
+        const g = groups.find((q) => Math.abs(q.h - h) / Math.max(q.h, h) < 0.2 && dist(q.color, t.fgColor) < 3600);
+        if (g) g.lines.push(t); else groups.push({ h, color: t.fgColor, lines: [t] });
+    }
+    for (const g of groups) {
+        if (g.lines.length < 2) continue;
+        const votes = new Map();
+        for (const t of g.lines) {
+            for (const c of t.font.ranking) votes.set(fontKey(c), (votes.get(fontKey(c)) || 0) + c.score * alnum(t));
+        }
+        const winner = [...votes.entries()].sort((a, b) => b[1] - a[1])[0][0];
+        const live = g.lines.reduce((sum, t) => sum + own(t), 0) / g.lines.length >= LIVE_TEXT_SCORE;
+        // grubun aykırı satırı (ör. harf aralıklı başlık) kendi eşleşmesi zayıfsa görsel kalır; kısa satırlar gruba uyar
+        for (const t of g.lines) t.live = live && (alnum(t) < 6 || own(t) >= LIVE_TEXT_SCORE - 0.1);
+        for (const t of g.lines) {
+            const c = t.font.ranking.find((q) => fontKey(q) === winner);
+            // uzun satır kendi eşleşmesinden belirgin kötüyse farklı fonttur (aynı boy ve renkte iki ayrı başlık): dokunma
+            if (c && (alnum(t) < 6 || c.score >= own(t) - 0.08)) t.font = { ...c, ranking: t.font.ranking };
+        }
+    }
+}
+
+/** Font eşleşmesi bu puanın üstündeyse yazı doğrudan canlı metin olur; altındaysa (süslü, konturlu yazı) görsel kalır */
+export const LIVE_TEXT_SCORE = 0.65;
 
 /**
  * Metin katmanları. Kutu ve koordinatlar canvas pikseli; size piksel.
  */
-async function extractTexts(canvas, { onProgress, exclude }) {
+export async function extractTexts(canvas, { onProgress, exclude } = {}) {
+    await loadAllFonts();
     const boxes = await detectText(canvas);
     const out = [];
     for (let i = 0; i < boxes.length; i++) {
@@ -121,7 +194,8 @@ async function extractTexts(canvas, { onProgress, exclude }) {
         if (exclude?.(b)) continue;
         const r = await recognize(canvas, b);
         if (r.conf < 0.85 || !/[\p{L}\p{N}]{2,}|\p{N}/u.test(r.text)) continue;
-        const crop = cropRotated(canvas, b, Math.round(b.h));
+        // Paylı kesit: kenar pikselleri gerçekten zemin olsun (sıkı kesitte iri yazıda kenar yazıyla dolar, renkler ters çıkar)
+        const crop = cropRotated(canvas, { ...b, w: b.w + b.h * 0.3, h: b.h * 1.3 }, Math.round(b.h * 1.3));
         const tp = textPixels(crop);
         // Düşük kontrastlı yazılar çoğunlukla fotoğrafın parçasıdır (forma, tabela): dokunma
         // Düşük kontrastlı kısa yazılar çoğunlukla fotoğrafın parçasıdır (forma no, tabela); uzun ve kesin okunan satırlar tutulur
@@ -134,7 +208,7 @@ async function extractTexts(canvas, { onProgress, exclude }) {
             const tr = await recognizeLine(big);
             if (tr.text) text = mergeDiacritics(text, tr.text);
         } catch { /* Tesseract yoksa Paddle sonucu kalır */ }
-        const font = matchFont(text, tp.ink, crop.width, crop.height, tp.box);
+        const font = matchFont(text, crop, tp);
         if (!font) continue;
         // Mürekkep izinin merkezi (kesit → görsel koordinatı)
         const icx = (tp.box.x0 + tp.box.x1) / 2 - crop.width / 2, icy = (tp.box.y0 + tp.box.y1) / 2 - crop.height / 2;
@@ -145,6 +219,10 @@ async function extractTexts(canvas, { onProgress, exclude }) {
             angle: b.angle, color: hex(tp.fg), bgColor: tp.bg, fgColor: tp.fg, box: b, font,
         });
     }
+    harmonizeFonts(out);
+    // Çok küçük yazıda OCR hatası sık ve font farkı zaten görünmez: afişin pikselleri korunur (yanlış harf canlı metinde göze batar)
+    const minH = Math.max(canvas.width, canvas.height) * 0.015;
+    for (const t of out) if (t.box.h < minH) t.live = false;
     return out;
 }
 

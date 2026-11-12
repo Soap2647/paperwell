@@ -165,6 +165,13 @@ function ObjectPanel({ o, pageId }) {
                         {opacity}
                         {rotation}
                         <p className="text-xs text-fg-3">Çift tıklayarak metni düzenleyin.</p>
+                        {o.rasterSource && (
+                            <Button icon={ImageUp} onClick={() => {
+                                const r = o.rasterSource;
+                                const textSource = { type: 'text', text: o.text, family: o.family, bold: o.bold, italic: o.italic, size: o.size, color: o.color, align: o.align, lineHeight: o.lineHeight, opacity: o.opacity, rotation: o.rotation, w: o.w, h: o.h, x: -r.x, y: -r.y };
+                                update({ type: 'image', src: r.src, x: o.x + r.x, y: o.y + r.y, w: r.w, h: r.h, rotation: 0, textSource, rasterSource: undefined });
+                            }}>{t('Afişteki haline dön')}</Button>
+                        )}
                     </>
                 )}
                 {(o.type === 'rect' || o.type === 'ellipse') && (
@@ -202,7 +209,10 @@ function ObjectPanel({ o, pageId }) {
                         {rotation}
                         {o.textSource ? (
                             <>
-                                <Button icon={Pen} onClick={() => update({ ...o.textSource, x: o.x + o.textSource.x, y: o.y + o.textSource.y, src: undefined, textSource: undefined })}>{t('Metni düzenle')}</Button>
+                                <Button icon={Pen} onClick={() => {
+                                    const x = o.x + o.textSource.x, y = o.y + o.textSource.y;
+                                    update({ ...o.textSource, x, y, src: undefined, textSource: undefined, rasterSource: { src: o.src, x: o.x - x, y: o.y - y, w: o.w, h: o.h } });
+                                }}>{t('Metni düzenle')}</Button>
                                 <p className="text-xs text-fg-3 leading-relaxed">
                                     {t('Yazı şu an afişteki haliyle duruyor. Düzenlerseniz şu fontla yeniden yazılır:')} {FONT_FAMILIES[o.textSource.family]?.label}{o.textSource.bold ? `, ${t('Kalın').toLowerCase()}` : ''}{o.textSource.italic ? `, ${t('İtalik').toLowerCase()}` : ''}
                                 </p>
