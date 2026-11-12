@@ -660,12 +660,14 @@ async function magicLayersLayerD(canvas, { fill, onProgress }) {
         return cur;
     };
     // öğeleri ayır, yerlerini doldur; deliğe yalnız tutulan öğeler (yumuşak kenarlarıyla) ve ilk turda yazılar girer
-    const peel = async (alpha, groups, depth, from, to) => {
+    const filled = new Uint8Array(W * H); // bugüne kadar doldurulan (yapay) pikseller
+    const peel = async (alpha, groups, depth, from, to, { dilate = grow } = {}) => {
         const hole = new Uint8Array(W * H);
         for (const g of groups) for (const i of g.pixels) hole[i] = 1;
         if (depth === 0) for (let i = 0; i < W * H; i++) if (textMask[i]) hole[i] = 1;
         const mask = new Uint8Array(W * H);
-        dilateInto(hole, W, H, grow, mask);
+        if (dilate) dilateInto(hole, W, H, dilate, mask); else mask.set(hole);
+        for (let i = 0; i < W * H; i++) if (mask[i]) filled[i] = 1;
         const before = img.slice();
         await fillHoles(img, W, H, mask, { best: fill === 'best', onProgress: step(from, to, 'fill') });
         fillAlpha(img, W, H, mask);
@@ -688,11 +690,27 @@ async function magicLayersLayerD(canvas, { fill, onProgress }) {
     const found = elements.reduce((sum, e) => sum + e.area, 0);
     if (found < 0.03 && (await isSam2Cached('basePlus'))) {
         onProgress?.(0.6, 'segment');
-        const masks = await segmentEverything(current(), W, H, step(0.6, 0.8, 'segment'));
+        const masks = await segmentEverything(current(), W, H, step(0.6, 0.75, 'segment'));
         const levels = maskLevels(masks);
         for (let L = 0; L < levels.length; L++) {
             const { alpha, groups } = levelGroups(levels[L], W, H);
-            if (groups.length) await peel(alpha, groups, depth + L, 0.8 + (L / levels.length) * 0.2, 0.8 + ((L + 1) / levels.length) * 0.2);
+            if (groups.length) await peel(alpha, groups, depth + L, 0.75 + (L / levels.length) * 0.15, 0.75 + ((L + 1) / levels.length) * 0.15);
+        }
+        // 2. tur: içindekiler soyulunca büyük kaplar (pencere paneli) düz kalır ve SAM onları bulur; ilk turda içerikleri
+        // yüzünden güven/kararlılık eşiğinin altındaydılar. Neredeyse tamamı doldurulmuş bölgeye düşen maske dolgu
+        // yapaylığıdır (ör. büyük kutunun altını dolduran koyu blok, ~%99): atılır. Gerçek kapta bu pay düşük (panel ~%62).
+        const filledShare = (m) => {
+            let n = 0;
+            for (let i = 0; i < G * G; i++) if (m.bin[i] && filled[Math.min(H - 1, Math.floor(((((i / G) | 0) + 0.5) / G) * H)) * W + Math.min(W - 1, Math.floor((((i % G) + 0.5) / G) * W))]) n++;
+            return n / m.on;
+        };
+        const containers = (await segmentEverything(current(), W, H, step(0.9, 0.95, 'segment'), { grid: 12, minArea: 0.02, minScore: 0.7, minStab: 0.85 }))
+            .filter((m) => filledShare(m) < 0.8);
+        if (containers.length) {
+            const { alpha, groups } = levelGroups(containers, W, H);
+            absorbFilled(groups, alpha, filled, W, H);
+            // genişletme yok: büyük, girintili kabın genişletme halkası katmanın dışında kalıp dolguyla bozulur
+            if (groups.length) await peel(alpha, groups, depth + levels.length, 0.95, 1, { dilate: 0 });
         }
     } else if (await isBgModelCached('birefnetLite')) {
         // LayerD fotoğraftaki nesneleri (top, kişi) zemin sayar: kalan görselde belirgin nesneyi BiRefNet lite'a sor.
@@ -714,9 +732,9 @@ async function magicLayersLayerD(canvas, { fill, onProgress }) {
  * SAM 2 base-plus ile otomatik maske üretimi (SAM AMG süzgeçleri): 24×24 ızgara, her noktanın 3 maskesi;
  * güven ≥ 0.8, kararlılık ≥ 0.92, makul alan, görsel kenarına değmeyen (zemin parçası değil); çakışanlardan iyisi kalır.
  */
-async function segmentEverything(canvas, W, H, onProgress) {
+async function segmentEverything(canvas, W, H, onProgress, { grid = 24, minArea = 0.0004, minScore = 0.8, minStab = 0.92 } = {}) {
     const emb = await encodeImage2(canvas, null, 'basePlus');
-    const N = 24, cands = [];
+    const N = grid, cands = [];
     for (let k = 0; k < N * N; k++) {
         onProgress?.(k / (N * N));
         const r = await decode2(emb, { points: [{ x: (((k % N) + 0.5) / N) * W, y: ((((k / N) | 0) + 0.5) / N) * H, positive: true }] });
@@ -730,7 +748,7 @@ async function segmentEverything(canvas, W, H, onProgress) {
                 if (v > -1) lo++;
             }
             const area = on / (S * S), stab = lo ? hi / lo : 0;
-            if (m.score < 0.8 || stab < 0.92 || area < 0.0004 || area > 0.6) continue;
+            if (m.score < minScore || stab < minStab || area < minArea || area > 0.6) continue;
             if (x0 === 0 || y0 === 0 || x1 === S - 1 || y1 === S - 1) continue;
             const bin = new Uint8Array(S * S);
             for (let i = 0; i < S * S; i++) if (m.logits[i] > 0) bin[i] = 1;
@@ -744,6 +762,32 @@ async function segmentEverything(canvas, W, H, onProgress) {
         kept.push(c);
     }
     return kept;
+}
+
+/**
+ * Kap maskesi, üstündeki öğelerin doldurulmuş yerlerini (SAM'e ayrı bölge gibi görünür) dışarıda bırakır; o pikseller
+ * kabın parçasıdır: maskeye bitişik doldurulmuş pikseller (kutusu içinde, başka kabın olmayan) tam opak olarak eklenir.
+ * Yoksa öğelerin kenar halkasında kabın yerine zeminin dolgusu görünür.
+ */
+function absorbFilled(groups, alpha, filled, W, H) {
+    const taken = new Uint8Array(W * H);
+    // kaplar keskin kenarlı ve opaktır: SAM'in iç bölgelerdeki yarı saydam olasılığı zemini gri desenle karıştırır
+    for (const g of groups) {
+        g.pixels = g.pixels.filter((i) => alpha[i] > 64);
+        for (const i of g.pixels) { alpha[i] = 255; taken[i] = 1; }
+    }
+    for (const g of groups) {
+        const st = [...g.pixels];
+        while (st.length) {
+            const p = st.pop(), x = p % W;
+            for (const q of [p - 1, p + 1, p - W, p + W]) {
+                if (q < 0 || q >= W * H || taken[q] || !filled[q] || Math.abs((q % W) - x) > 1) continue;
+                const qx = q % W, qy = (q / W) | 0;
+                if (qx < g.x0 || qx > g.x1 || qy < g.y0 || qy > g.y1) continue;
+                taken[q] = 1; alpha[q] = 255; g.pixels.push(q); st.push(q);
+            }
+        }
+    }
 }
 
 /** İki maskenin kesişimi (kutular kesişmiyorsa 0) */
