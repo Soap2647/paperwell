@@ -6,7 +6,7 @@
 //  3) Arka plan → yazı ve nesnelerin yeri doldurulur (büyük alanlar LaMa, küçükler MI-GAN)
 import { detectText, recognize, cropRotated, rectCorners } from './textDetect';
 import { recognizeLine } from './ocr';
-import { encodeImage2, decode2 } from './segment2';
+import { encodeImage2, decode2, isSam2Cached } from './segment2';
 import { inpaintMigan } from './inpaint/migan';
 import { inpaintLama } from './inpaint/lama';
 import { FONT_FAMILIES } from './fonts';
@@ -620,10 +620,23 @@ async function magicLayersLayerD(canvas, { fill, onProgress }) {
         const groups = layerGroups(alpha, depth === 0 ? textMask : null, W, H);
         if (!groups.length && depth > 0) break;
         await peel(alpha, groups, depth, from + 0.04, from + 0.2);
+        // ilk turda yazı dışında az şey bulduysa görsel illüstrasyon: diğer LayerD turları boşuna (aşağıda SAM 2 ayırır)
+        if (depth === 0 && groups.reduce((sum, g) => sum + g.n, 0) < W * H * 0.03) { depth++; break; }
     }
-    // LayerD fotoğraftaki nesneleri (top, kişi) zemin sayar: kalan görselde belirgin nesneyi BiRefNet lite'a sor.
-    // Kenara değmeyen, makul boyutlu olanlar ayrı katman olur (model indirilmemişse adım atlanır).
-    if (await isBgModelCached('birefnetLite')) {
+    // LayerD düz grafik tasarımlarda iyi, dokulu illüstrasyonları (AI üretimi afişler) ise tek parça zemin sayar:
+    // yazı dışında alanın %3'ünden azını bulduysa nesneleri SAM 2 base-plus "her şeyi segmente et" ile ayır.
+    const found = elements.reduce((sum, e) => sum + e.area, 0);
+    if (found < 0.03 && (await isSam2Cached('basePlus'))) {
+        onProgress?.(0.6, 'segment');
+        const masks = await segmentEverything(current(), W, H, step(0.6, 0.8, 'segment'));
+        const levels = maskLevels(masks);
+        for (let L = 0; L < levels.length; L++) {
+            const { alpha, groups } = levelGroups(levels[L], W, H);
+            if (groups.length) await peel(alpha, groups, depth + L, 0.8 + (L / levels.length) * 0.2, 0.8 + ((L + 1) / levels.length) * 0.2);
+        }
+    } else if (await isBgModelCached('birefnetLite')) {
+        // LayerD fotoğraftaki nesneleri (top, kişi) zemin sayar: kalan görselde belirgin nesneyi BiRefNet lite'a sor.
+        // Kenara değmeyen, makul boyutlu olanlar ayrı katman olur (model indirilmemişse adım atlanır).
         onProgress?.(0.8, 'segment');
         const sal = await predictAlpha(current(), 'birefnetLite');
         const subjects = layerGroups(sal, null, W, H).filter((g) => {
@@ -635,6 +648,93 @@ async function magicLayersLayerD(canvas, { fill, onProgress }) {
     ctx.putImageData(imgData, 0, 0);
     texts.forEach((t, i) => { t.layer = cutText(orig, textBg, W, H, t, textMasks[i]); });
     return { background: ctx.canvas, texts: texts.filter((t) => t.layer), elements };
+}
+
+/**
+ * SAM 2 base-plus ile otomatik maske üretimi (SAM AMG süzgeçleri): 24×24 ızgara, her noktanın 3 maskesi;
+ * güven ≥ 0.8, kararlılık ≥ 0.92, makul alan, görsel kenarına değmeyen (zemin parçası değil); çakışanlardan iyisi kalır.
+ */
+async function segmentEverything(canvas, W, H, onProgress) {
+    const emb = await encodeImage2(canvas, null, 'basePlus');
+    const N = 24, cands = [];
+    for (let k = 0; k < N * N; k++) {
+        onProgress?.(k / (N * N));
+        const r = await decode2(emb, { points: [{ x: (((k % N) + 0.5) / N) * W, y: ((((k / N) | 0) + 0.5) / N) * H, positive: true }] });
+        const S = r.size;
+        for (const m of r.masks) {
+            let on = 0, hi = 0, lo = 0, x0 = S, y0 = S, x1 = -1, y1 = -1;
+            for (let i = 0; i < S * S; i++) {
+                const v = m.logits[i];
+                if (v > 0) { on++; const x = i % S, y = (i / S) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+                if (v > 1) hi++;
+                if (v > -1) lo++;
+            }
+            const area = on / (S * S), stab = lo ? hi / lo : 0;
+            if (m.score < 0.8 || stab < 0.92 || area < 0.0004 || area > 0.6) continue;
+            if (x0 === 0 || y0 === 0 || x1 === S - 1 || y1 === S - 1) continue;
+            const bin = new Uint8Array(S * S);
+            for (let i = 0; i < S * S; i++) if (m.logits[i] > 0) bin[i] = 1;
+            cands.push({ logits: m.logits, bin, on, box: [x0, y0, x1, y1], score: m.score * stab });
+        }
+    }
+    cands.sort((a, b) => b.score - a.score);
+    const kept = [];
+    for (const c of cands) {
+        if (kept.some((k) => maskIoU(c, k) > 0.7)) continue;
+        kept.push(c);
+    }
+    return kept;
+}
+
+/** İki maskenin kesişimi (kutular kesişmiyorsa 0) */
+function maskInter(a, b) {
+    const x0 = Math.max(a.box[0], b.box[0]), y0 = Math.max(a.box[1], b.box[1]), x1 = Math.min(a.box[2], b.box[2]), y1 = Math.min(a.box[3], b.box[3]);
+    if (x0 > x1 || y0 > y1) return 0;
+    let n = 0;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (a.bin[y * G + x] && b.bin[y * G + x]) n++;
+    return n;
+}
+const maskIoU = (a, b) => { const i = maskInter(a, b); return i / (a.on + b.on - i); };
+
+/**
+ * İçerme seviyeleri: hiçbir maskeyi içermeyenler en üstte (0), içindekilerin en yükseğinin bir altı.
+ * (hap → program kutusu → pencere). En fazla 4 seviye; daha derindekiler sonuncuya katılır.
+ */
+function maskLevels(masks) {
+    const order = [...masks].sort((a, b) => a.on - b.on);
+    for (const m of order) {
+        m.level = 0;
+        for (const s of order) {
+            if (s === m || s.on >= m.on || s.level === undefined) continue;
+            if (maskInter(s, m) >= s.on * 0.9) m.level = Math.max(m.level, s.level + 1);
+        }
+    }
+    const levels = [];
+    for (const m of order) (levels[Math.min(3, m.level)] ||= []).push(m);
+    return levels.filter(Boolean);
+}
+
+/** Bir seviyedeki maskeleri tam çözünürlükte öğe gruplarına çevirir (çakışan pikselde alfası yüksek olan) */
+function levelGroups(masks, W, H) {
+    const alpha = new Uint8Array(W * H), owner = new Int32Array(W * H).fill(-1);
+    masks.forEach((m, idx) => {
+        const bx0 = Math.max(0, Math.floor(((m.box[0] - 1) / G) * W)), by0 = Math.max(0, Math.floor(((m.box[1] - 1) / G) * H));
+        const bx1 = Math.min(W - 1, Math.ceil(((m.box[2] + 2) / G) * W)), by1 = Math.min(H - 1, Math.ceil(((m.box[3] + 2) / G) * H));
+        for (let y = by0; y <= by1; y++) for (let x = bx0; x <= bx1; x++) {
+            const a = 255 * sigmoid(2 * sampleLogits(m.logits, (x + 0.5) / W, (y + 0.5) / H));
+            const i = y * W + x;
+            if (a > 3 && a > alpha[i]) { alpha[i] = a; owner[i] = idx; }
+        }
+    });
+    const groups = masks.map(() => ({ x0: W, y0: H, x1: -1, y1: -1, n: 0, pixels: [] }));
+    for (let i = 0; i < W * H; i++) {
+        if (owner[i] < 0) continue;
+        const g = groups[owner[i]], x = i % W, y = (i / W) | 0;
+        g.pixels.push(i);
+        if (alpha[i] > 128) g.n++;
+        if (x < g.x0) g.x0 = x; if (x > g.x1) g.x1 = x; if (y < g.y0) g.y0 = y; if (y > g.y1) g.y1 = y;
+    }
+    return { alpha, groups: groups.filter((g) => g.n > 0) };
 }
 
 /**

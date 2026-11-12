@@ -4,7 +4,7 @@ import { withBusy } from '../store/actions';
 import { newId, readPages, rebuildPages } from '../core/pageOps';
 import { renderPageToCanvas } from '../core/render';
 import { isTextModelCached, loadTextModels, OCR_BYTES } from '../core/textDetect';
-import { isSam2Cached, loadSam2, SAM2_BYTES } from '../core/segment2';
+import { isSam2Cached, loadSam2, SAM2_BYTES, SAM2_LARGE_BYTES } from '../core/segment2';
 import { isLamaCached, loadLama, LAMA_BYTES } from '../core/inpaint/lama';
 import { isMiganCached, loadMigan } from '../core/inpaint/migan';
 import { magicLayers, textToObject, layerdAvailable } from '../core/magicLayers';
@@ -21,7 +21,9 @@ export async function runMagicLayers(ed, { fill = 'best' } = {}) {
     const needs = [
         [await isTextModelCached(), OCR_BYTES, loadTextModels],
         ...(layerd
-            ? [[await isBgModelCached('layerd'), BG_MODELS.layerd.bytes, (p) => loadBgModel('layerd', p)], [await isBgModelCached('birefnetLite'), BG_MODELS.birefnetLite.bytes, (p) => loadBgModel('birefnetLite', p)]]
+            ? [[await isBgModelCached('layerd'), BG_MODELS.layerd.bytes, (p) => loadBgModel('layerd', p)], [await isBgModelCached('birefnetLite'), BG_MODELS.birefnetLite.bytes, (p) => loadBgModel('birefnetLite', p)],
+                // illüstrasyon türü afişlerde nesneleri SAM 2 base-plus ayırır
+                [await isSam2Cached('basePlus'), SAM2_LARGE_BYTES, (p) => loadSam2(p, 'basePlus')]]
             : [[await isSam2Cached(), SAM2_BYTES, loadSam2]]),
         [await isMiganCached(), 28e6, loadMigan],
         [fill !== 'best' || (await isLamaCached()), LAMA_BYTES, loadLama],
