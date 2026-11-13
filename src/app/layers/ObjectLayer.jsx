@@ -49,7 +49,8 @@ export default function ObjectLayer({ page, zoom, interactive }) {
     const pe = interactive ? 'auto' : 'none';
 
     return (
-        <div className="absolute inset-0" style={{ pointerEvents: 'none' }}>
+        // isolation: nesnelerin z-index'i (liste sırası) sayfanın diğer katmanlarını aşmasın
+        <div className="absolute inset-0" style={{ pointerEvents: 'none', isolation: 'isolate' }}>
             {interactive && (
                 <div
                     className="absolute inset-0"
@@ -58,37 +59,43 @@ export default function ObjectLayer({ page, zoom, interactive }) {
                 />
             )}
 
-            <svg className="absolute inset-0 overflow-visible" width={page.width} height={page.height} style={{ pointerEvents: 'none' }}>
-                {objs.map((o) => o.type !== 'text' && o.type !== 'note' && (
-                    <g key={o.id} style={{ pointerEvents: pe, cursor: interactive ? 'move' : undefined }} onPointerDown={(e) => startDrag(e, o)}>
-                        <ShapeSvg o={o} hit={interactive} />
-                    </g>
-                ))}
-            </svg>
-
-            {objs.map((o) => o.type === 'text' && (
+            {/* Yığın sırası liste sırasıdır (dışa aktarımla aynı): görsel, şekil ve metin birbirinin üstüne geçebilir; notlar hep üstte */}
+            {objs.map((o, i) => (o.type === 'text' ? (
                 <TextObject
                     key={o.id}
                     o={o}
+                    z={i + 1}
                     editing={editingId === o.id}
                     interactive={interactive}
                     onPointerDown={(e) => startDrag(e, o)}
                     onDoubleClick={() => interactive && dispatch({ type: 'SET', values: { editing: { kind: 'text', id: o.id }, selected: { pageId: page.id, id: o.id } } })}
                 />
-            ))}
+            ) : o.type !== 'note' && (
+                <svg key={o.id} className="absolute inset-0 overflow-visible" width={page.width} height={page.height} style={{ pointerEvents: 'none', zIndex: i + 1 }}>
+                    <g style={{ pointerEvents: pe, cursor: interactive ? 'move' : undefined }} onPointerDown={(e) => startDrag(e, o)}>
+                        <ShapeSvg o={o} hit={interactive} />
+                    </g>
+                </svg>
+            )))}
 
-            {objs.map((o) => o.type === 'note' && (
-                <NoteObject
-                    key={o.id}
-                    o={o}
-                    open={editingId === o.id}
-                    interactive={interactive}
-                    onPointerDown={(e) => startDrag(e, o)}
-                    onOpen={() => dispatch({ type: 'SET', values: { editing: { kind: 'note', id: o.id }, selected: { pageId: page.id, id: o.id } } })}
-                />
-            ))}
+            <div className="absolute inset-0" style={{ pointerEvents: 'none', zIndex: 900000 }}>
+                {objs.map((o) => o.type === 'note' && (
+                    <NoteObject
+                        key={o.id}
+                        o={o}
+                        open={editingId === o.id}
+                        interactive={interactive}
+                        onPointerDown={(e) => startDrag(e, o)}
+                        onOpen={() => dispatch({ type: 'SET', values: { editing: { kind: 'note', id: o.id }, selected: { pageId: page.id, id: o.id } } })}
+                    />
+                ))}
+            </div>
 
-            {selected && interactive && editingId !== selected.id && <Selection o={selected} zoom={zoom} onHandle={startDrag} />}
+            {selected && interactive && editingId !== selected.id && (
+                <div className="absolute inset-0" style={{ pointerEvents: 'none', zIndex: 1000000 }}>
+                    <Selection o={selected} zoom={zoom} onHandle={startDrag} />
+                </div>
+            )}
         </div>
     );
 }
@@ -144,7 +151,7 @@ export function ShapeSvg({ o, hit }) {
     }
 }
 
-function TextObject({ o, editing, interactive, onPointerDown, onDoubleClick }) {
+function TextObject({ o, z, editing, interactive, onPointerDown, onDoubleClick }) {
     const { dispatch } = useEditor();
     const ref = useRef(null);
 
@@ -186,6 +193,7 @@ function TextObject({ o, editing, interactive, onPointerDown, onDoubleClick }) {
             style={{
                 left: o.x,
                 top: o.y,
+                zIndex: z,
                 ...textStyle(o),
                 transform: o.rotation ? `rotate(${o.rotation}deg)` : undefined,
                 transformOrigin: 'center',
