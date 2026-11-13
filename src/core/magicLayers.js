@@ -80,7 +80,7 @@ for (const [family, f] of Object.entries(FONT_FAMILIES)) {
 }
 
 const fontKey = (c) => `${c.family}|${c.weight ?? (c.bold ? 700 : 400)}|${c.italic ? 1 : 0}`;
-const fontCss = ({ family, bold, italic, weight }, size) => `${italic ? 'italic ' : ''}${weight ?? (bold ? 700 : 400)} ${size}px ${FONT_FAMILIES[family].css}`;
+const fontCss = ({ family, bold, italic, weight }, size) => `${italic ? 'italic ' : ''}${weight ?? (bold ? 700 : 400)} ${size}px ${(FONT_FAMILIES[family] || FONT_FAMILIES.sans).css}`;
 
 /** 3×3 kutu bulanıklığı (bir pikselik hizalama kaymasına dayanıklı karşılaştırma için) */
 function blur3(a, w, h) {

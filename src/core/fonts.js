@@ -28,6 +28,7 @@ function nearestWeight(f, weight) {
 
 export function fontUrl(family, bold, italic, weight) {
     const f = FONT_FAMILIES[family] || FONT_FAMILIES.sans;
+    if (f.customUrl) return f.customUrl; // kullanıcının eklediği font (blob:)
     if (f.base) return `/fonts/${f.file}-${variantSuffix(weight ? weight >= 600 : bold, italic)}.ttf`;
     return `/fonts/g/${f.file}-${WEIGHT_NAMES[nearestWeight(f, weight ?? (bold ? 700 : 400))]}.ttf`;
 }
@@ -77,7 +78,7 @@ export function registerCssFonts() {
         }
     }
     for (const [key, f] of Object.entries(FONT_FAMILIES)) {
-        if (f.base) continue;
+        if (f.base || f.customUrl) continue;
         for (const w of f.weights) {
             const face = new FontFace(f.cssName, `url(${fontUrl(key, false, false, w)})`, { weight: String(w), display: 'swap' });
             document.fonts.add(face);

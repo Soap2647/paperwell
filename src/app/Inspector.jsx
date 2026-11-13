@@ -13,7 +13,8 @@ import { isMiganCached, loadMigan } from '../core/inpaint/migan';
 import { isSamCached, loadSam } from '../core/segment';
 import { getBackend } from '../core/inference';
 import { applyGrab, clearGrab } from './grabActions';
-import { FONT_FAMILIES } from '../core/fonts';
+import { FONT_FAMILIES, effectiveWeight } from '../core/fonts';
+import FontPicker from './FontPicker';
 import { documentHasForm } from '../core/forms';
 import { Button, ColorPicker, Field, Segmented, Slider, Toggle, cx } from '../components/ui';
 import { toast } from '../components/Toaster';
@@ -69,12 +70,20 @@ function NumberInput({ value, onChange, min = 1, max = 400, step = 0.5, suffix }
     );
 }
 
-function FamilySelect({ value, onChange, originalLabel }) {
+const FamilySelect = FontPicker;
+
+const WEIGHT_STEPS = [{ value: 400, label: 'Normal' }, { value: 500, label: 'Orta' }, { value: 600, label: 'Yarı kalın' }, { value: 700, label: 'Kalın' }];
+/** Ailenin 2'den çok ağırlığı varsa 4 kademeli kalınlık seçici */
+function WeightControl({ o, update }) {
+    const f = FONT_FAMILIES[o.family];
+    if (!f?.weights || f.weights.length <= 2) return null;
+    const w = effectiveWeight(o);
     return (
-        <select className="field" value={value} onChange={(e) => onChange(e.target.value)}>
-            {originalLabel && <option value="original">{t('Orijinal')}: {originalLabel}</option>}
-            {Object.entries(FONT_FAMILIES).map(([k, f]) => <option key={k} value={k}>{f.label}</option>)}
-        </select>
+        <Field label={t('Kalınlık')}>
+            <Segmented value={WEIGHT_STEPS.reduce((b, s) => (Math.abs(s.value - w) < Math.abs(b - w) ? s.value : b), 400)}
+                onChange={(weight) => update({ weight, bold: weight >= 600 })}
+                options={WEIGHT_STEPS.map((s) => ({ ...s, label: <span className="truncate">{t(s.label)}</span> }))} />
+        </Field>
     );
 }
 
@@ -159,6 +168,7 @@ function ObjectPanel({ o, pageId }) {
                             <Field label={t('Boyut')}><NumberInput value={o.size} onChange={(size) => update({ size })} suffix="pt" /></Field>
                             <StyleToggles bold={o.bold} italic={o.italic} onChange={(c) => update('bold' in c ? { ...c, weight: undefined } : c)} />
                         </div>
+                        <WeightControl o={o} update={update} />
                         <Field label={t('Hizalama')}>
                             <Segmented value={o.align || 'left'} onChange={(align) => update({ align })} options={[{ value: 'left', icon: AlignLeft }, { value: 'center', icon: AlignCenter }, { value: 'right', icon: AlignRight }]} />
                         </Field>
