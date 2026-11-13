@@ -3,18 +3,23 @@ import { StickyNote } from 'lucide-react';
 import { useEditor } from '../../store/editor';
 import { arrowHead } from '../../core/export';
 import { bbox, resizeObject, textStyle, pointsToPath, moveBy } from '../objects';
+import { snapTargets, snapMove, snapResize, matchedLines, mmText } from '../snap';
 import { t } from '../../i18n';
 
 const HANDLES = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const CORNERS = ['nw', 'ne', 'se', 'sw'];
 const CURSORS = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' };
 
-export default function ObjectLayer({ page, zoom, interactive }) {
+export default function ObjectLayer({ page, zoom, interactive, objects }) {
     const { state, dispatch } = useEditor();
-    const objs = (state.objects[page.id] || []).filter((o) => !o.hidden);
+    // objects: dışarıdan verilen liste (sayfa küçük resmi gecikmeli değer kullanır); yoksa mağazadaki
+    const objs = (objects ?? state.objects[page.id] ?? []).filter((o) => !o.hidden);
     const selectedId = state.selected?.pageId === page.id ? state.selected.id : null;
     const editingId = state.editing?.kind === 'text' || state.editing?.kind === 'note' ? state.editing.id : null;
     const drag = useRef(null);
+    const [fx, setFx] = useState(null); // sürükleme sırasında akıllı kılavuz çizgileri ve ölçü etiketi
+    const guidesRef = useRef([]);
+    guidesRef.current = state.guides?.[page.id] || [];
 
     // Sürükleme / boyutlandırma: olaylar pencereye bağlanır
     useEffect(() => {
@@ -27,10 +32,22 @@ export default function ObjectLayer({ page, zoom, interactive }) {
                 d.moved = true;
                 dispatch({ type: 'CHECKPOINT' });
             }
-            const changes = d.handle === 'move' ? moveBy(d.orig, dx, dy) : resizeObject(d.orig, d.handle, dx, dy, d.keepAspect !== e.shiftKey);
+            // Akıllı kılavuz: kenar/orta çizgileri sayfa kenarına, diğer nesnelere ve kılavuzlara yakalanır (Alt: kapat)
+            const snapOn = !e.altKey && d.targets;
+            const thr = 6 / zoom;
+            let ndx = dx, ndy = dy;
+            const edge = d.handle !== 'move' && d.handle !== 'p1' && d.handle !== 'p2' && d.orig.type !== 'text';
+            if (snapOn && d.handle === 'move') ({ dx: ndx, dy: ndy } = snapMove(d.box, dx, dy, d.targets, thr));
+            else if (snapOn && edge) ({ dx: ndx, dy: ndy } = snapResize(d.box, d.handle, dx, dy, d.targets, thr));
+            const changes = d.handle === 'move' ? moveBy(d.orig, ndx, ndy) : resizeObject(d.orig, d.handle, ndx, ndy, d.keepAspect !== e.shiftKey);
             dispatch({ type: 'UPDATE_OBJECT', id: d.id, changes, transient: true });
+            const nb = bbox({ ...d.orig, ...changes });
+            const label = d.handle === 'move' ? `X ${mmText(nb.x)}  Y ${mmText(nb.y)} mm`
+                : d.orig.type === 'text' ? `${changes.size} pt`
+                    : d.handle === 'p1' || d.handle === 'p2' ? null : `${mmText(nb.w)} × ${mmText(nb.h)} mm`;
+            setFx({ lines: snapOn && (d.handle === 'move' || edge) ? matchedLines(nb, d.targets) : [], label, box: nb });
         };
-        const up = () => { drag.current = null; };
+        const up = () => { drag.current = null; setFx(null); };
         window.addEventListener('pointermove', move);
         window.addEventListener('pointerup', up);
         return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
@@ -42,7 +59,10 @@ export default function ObjectLayer({ page, zoom, interactive }) {
         e.preventDefault();
         if (selectedId !== o.id) dispatch({ type: 'SET', values: { selected: { pageId: page.id, id: o.id }, editing: null } });
         if (o.locked) return; // kilitli katman seçilir ama taşınmaz
-        drag.current = { id: o.id, handle, sx: e.clientX, sy: e.clientY, orig: o, keepAspect: o.type === 'image' };
+        drag.current = {
+            id: o.id, handle, sx: e.clientX, sy: e.clientY, orig: o, keepAspect: o.type === 'image',
+            box: bbox(o), targets: snapTargets(objs, o.id, page, guidesRef.current, bbox),
+        };
     };
 
     const selected = objs.find((o) => o.id === selectedId);
@@ -90,6 +110,24 @@ export default function ObjectLayer({ page, zoom, interactive }) {
                     />
                 ))}
             </div>
+
+            {fx && (
+                <div className="absolute inset-0" style={{ pointerEvents: 'none', zIndex: 1000001 }}>
+                    <svg className="absolute inset-0 overflow-visible" width={page.width} height={page.height}>
+                        {fx.lines.map((l) => (l.axis === 'x'
+                            ? <line key={'x' + l.pos} x1={l.pos} y1={0} x2={l.pos} y2={page.height} stroke="#ff2d95" strokeWidth={1 / zoom} />
+                            : <line key={'y' + l.pos} x1={0} y1={l.pos} x2={page.width} y2={l.pos} stroke="#ff2d95" strokeWidth={1 / zoom} />))}
+                    </svg>
+                    {fx.label && (
+                        <div
+                            className="absolute whitespace-nowrap rounded bg-[#ff2d95] text-white font-medium tabular-nums"
+                            style={{ left: fx.box.x + fx.box.w / 2, top: fx.box.y + fx.box.h + 8 / zoom, transform: 'translateX(-50%)', fontSize: 11 / zoom, padding: `${2 / zoom}px ${6 / zoom}px` }}
+                        >
+                            {fx.label}
+                        </div>
+                    )}
+                </div>
+            )}
 
             {selected && interactive && editingId !== selected.id && (
                 <div className="absolute inset-0" style={{ pointerEvents: 'none', zIndex: 1000000 }}>
