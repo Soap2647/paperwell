@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Upload, Type, Sparkles, ShieldCheck, PenLine, LayoutGrid, FileOutput, FilePlus2, Combine, ScanLine, Moon, Sun, Languages, Github } from 'lucide-react';
 import { useEditor } from '../store/editor';
-import { openFile, createBlank } from '../store/actions';
+import { openFile } from '../store/actions';
 import { isDesktop, pickFiles } from '../platform';
 import { t, getLocale, setLocale } from '../i18n';
 import { Button, IconButton, cx } from '../components/ui';
@@ -9,6 +9,7 @@ import { useTheme, setTheme } from './theme';
 import Logo from './Logo';
 import MergeDialog from './dialogs/MergeDialog';
 import ScanDialog from './dialogs/ScanDialog';
+import NewDesignDialog from './dialogs/NewDesignDialog';
 
 const FEATURES = [
     { icon: Type, title: 'Metni yerinde düzenle', desc: 'Orijinal font korunur', tone: 'text-indigo-500 bg-indigo-500/10' },
@@ -25,6 +26,7 @@ export default function Landing() {
     const [drag, setDrag] = useState(false);
     const [mergeOpen, setMergeOpen] = useState(false);
     const [scanOpen, setScanOpen] = useState(false);
+    const [newOpen, setNewOpen] = useState(false);
     const theme = useTheme();
     const dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
@@ -88,7 +90,7 @@ export default function Landing() {
                         onChange={(e) => { onFiles(e.target.files); e.target.value = ''; }}
                     />
                     <div className="mt-4 flex flex-wrap justify-center gap-2">
-                        <Button variant="ghost" icon={FilePlus2} onClick={() => createBlank(ed)}>{t('Boş belge oluştur')}</Button>
+                        <Button variant="ghost" icon={FilePlus2} onClick={() => setNewOpen(true)}>{t('Yeni tasarım oluştur')}</Button>
                         <Button variant="ghost" icon={Combine} onClick={() => setMergeOpen(true)}>{t('PDF birleştir')}</Button>
                         <Button variant="ghost" icon={ScanLine} onClick={() => setScanOpen(true)}>{t('Belge tara')}</Button>
                     </div>
@@ -115,6 +117,7 @@ export default function Landing() {
             </main>
             <MergeDialog open={mergeOpen} onClose={() => setMergeOpen(false)} standalone />
             <ScanDialog open={scanOpen} onClose={() => setScanOpen(false)} />
+            <NewDesignDialog open={newOpen} onClose={() => setNewOpen(false)} />
         </div>
     );
 }

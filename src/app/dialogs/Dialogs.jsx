@@ -14,6 +14,7 @@ import PrintDialog from './PrintDialog';
 import SignatureDialog from './SignatureDialog';
 import BgRemoveDialog from './BgRemoveDialog';
 import ScanDialog from './ScanDialog';
+import NewDesignDialog from './NewDesignDialog';
 
 function PositionGrid({ value, onChange, positions }) {
     return (
@@ -265,6 +266,7 @@ export default function Dialogs() {
             <PrintDialog open={d === 'print'} onClose={close} />
             <BgRemoveDialog open={d === 'bgremove'} onClose={close} />
             <ScanDialog open={d === 'scan'} onClose={close} />
+            <NewDesignDialog open={d === 'newdesign' || d === 'resize'} mode={d === 'resize' ? 'resize' : 'new'} onClose={close} />
             <SignatureDialog
                 open={d === 'signature'}
                 onClose={close}

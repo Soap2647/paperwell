@@ -1,9 +1,9 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, FileImage, FileText,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
-import { download } from '../store/actions';
+import { download, exportPng } from '../store/actions';
 import { runMagicLayers } from './magicLayersAction';
 import { isDesktop } from '../platform';
 import { t, getLocale, setLocale } from '../i18n';
@@ -25,6 +25,11 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
         dispatch({ type: 'CLOSE' });
     };
 
+    const newDesign = () => {
+        if (state.dirty && !window.confirm(t('Kaydedilmemiş değişiklikler var') + ' — ' + t('Yeni tasarım') + '?')) return;
+        open('newdesign');
+    };
+
     const toolItems = [
         { header: t('Belge araçları') },
         { label: t('Birleştir'), icon: Combine, onClick: () => open('merge') },
@@ -35,6 +40,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
         { label: t('Metin tanıma (OCR)'), icon: ScanText, onClick: () => open('ocr') },
         { label: t('Sihirli Katmanlar'), icon: Layers, onClick: () => runMagicLayers(ed) },
         { label: t('Belge tarayıcı'), icon: ScanLine, onClick: () => open('scan') },
+        { label: t('Boyutu değiştir…'), icon: Scaling, onClick: () => open('resize') },
         { label: t('Arka planı kaldır'), icon: ImageMinus, onClick: () => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: null } }), disabled: !isImage },
         '-',
         { label: t('Dışa aktar'), icon: FileOutput, onClick: () => open('export') },
@@ -42,6 +48,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
     ];
 
     const moreItems = [
+        { label: t('Yeni tasarım…'), icon: FilePlus2, onClick: newDesign },
         { label: t('Yeni dosya'), icon: FilePlus2, onClick: closeDoc },
         { label: t('Farklı kaydet'), icon: Download, onClick: () => download(ed, { saveAs: true }), shortcut: 'Ctrl+Shift+S' },
         { label: t('Klavye kısayolları'), icon: Keyboard, onClick: () => open('shortcuts'), shortcut: '?' },
@@ -108,6 +115,10 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                 <Button variant="primary" icon={Download} onClick={() => download(ed)} className="ml-1">
                     <span className="hidden sm:inline">{isImage ? t('PNG olarak indir') : isDesktop ? t('Kaydet') : t('İndir')}</span>
                 </Button>
+                {!isImage && <Menu trigger={<IconButton icon={ChevronDown} label={t('Dışa aktar')} size="sm" />} items={[
+                    { label: t('PDF olarak indir'), icon: FileText, onClick: () => download(ed) },
+                    { label: t('PNG görsel olarak indir'), icon: FileImage, onClick: () => exportPng(ed) },
+                ]} align="right" />}
             </div>
         </header>
     );
