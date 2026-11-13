@@ -1,6 +1,28 @@
 // scripts/build_fonts.py tarafından üretildi (google/fonts @ 35e77c385497); elle düzenlemeyin.
 // Açık lisanslı (OFL / Apache-2.0) aileler; dosyalar public/fonts/g/, lisanslar public/fonts/g/licenses/.
 export const FONT_CATALOG = {
+    "googlesans": {
+        "label": "Google Sans",
+        "file": "GoogleSans",
+        "kind": "sans",
+        "weights": [
+            400,
+            500,
+            600,
+            700
+        ]
+    },
+    "googlesanscode": {
+        "label": "Google Sans Code",
+        "file": "GoogleSansCode",
+        "kind": "mono",
+        "weights": [
+            400,
+            500,
+            600,
+            700
+        ]
+    },
     "inter": {
         "label": "Inter",
         "file": "Inter",

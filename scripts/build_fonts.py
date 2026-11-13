@@ -14,6 +14,8 @@ from fontTools import subset
 GFONTS_COMMIT = '35e77c3854970a550d9894a85aba21420813a019'
 # anahtar, klasör, etiket, tür (sans / serif / display / script / mono)
 FAMILIES = [
+    # marka fontu: GDG ve Google görsel kimliği (OFL, ayrılmış font adı yok; TRADEMARKS.md lisansla birlikte gelir)
+    ('googlesans', 'ofl/googlesans', 'Google Sans', 'sans'), ('googlesanscode', 'ofl/googlesanscode', 'Google Sans Code', 'mono'),
     ('inter', 'ofl/inter', 'Inter', 'sans'), ('roboto', 'ofl/roboto', 'Roboto', 'sans'), ('opensans', 'ofl/opensans', 'Open Sans', 'sans'),
     ('montserrat', 'ofl/montserrat', 'Montserrat', 'sans'), ('poppins', 'ofl/poppins', 'Poppins', 'sans'), ('lato', 'ofl/lato', 'Lato', 'sans'),
     ('raleway', 'ofl/raleway', 'Raleway', 'sans'), ('nunito', 'ofl/nunito', 'Nunito', 'sans'), ('worksans', 'ofl/worksans', 'Work Sans', 'sans'),
@@ -69,9 +71,10 @@ def make(folder, weight):
         axes = {a.axisTag: a for a in font['fvar'].axes}
         if weight < axes['wght'].minValue or weight > axes['wght'].maxValue:
             return None
-        loc = {'wght': weight}
-        if 'wdth' in axes: loc['wdth'] = 100
-        if 'opsz' in axes: loc['opsz'] = axes['opsz'].defaultValue
+        # tüm eksenler sabitlenir (kalan değişken eksen fontu değişken bırakır): ağırlık istenen, genişlik 100, diğerleri varsayılan
+        loc = {tag: a.defaultValue for tag, a in axes.items()}
+        loc['wght'] = weight
+        if 'wdth' in axes and axes['wdth'].minValue <= 100 <= axes['wdth'].maxValue: loc['wdth'] = 100
         font = instancer.instantiateVariableFont(font, loc, updateFontNames=False)
     opts = subset.Options()
     opts.layout_features = ['kern', 'liga', 'clig', 'calt', 'locl', 'mark', 'mkmk']
@@ -101,6 +104,9 @@ for key, rel, label, kind in FAMILIES:
     lic = next((p for p in (os.path.join(folder, 'OFL.txt'), os.path.join(folder, 'LICENSE.txt')) if os.path.exists(p)), None)
     assert lic, f'lisans yok: {rel}'
     shutil.copy(lic, os.path.join(lic_dir, f'{file}.txt'))
+    tm = os.path.join(folder, 'TRADEMARKS.md')
+    if os.path.exists(tm):
+        shutil.copy(tm, os.path.join(lic_dir, f'{file}-TRADEMARKS.md'))
     catalog[key] = {'label': label, 'file': file, 'kind': kind, 'weights': weights}
     print(f'{label:20s} {weights}')
 

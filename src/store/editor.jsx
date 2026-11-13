@@ -11,11 +11,27 @@ const load = (key, fallback) => {
     } catch { return fallback; }
 };
 
+/** Kayıtlı araç ayarları; Google Sans varsayılan yazı fontu olduğunda bir kez geçirilir (sonraki seçimlere dokunulmaz) */
+const loadOpts = () => {
+    const o = load('paperwell.opts', DEFAULT_OPTS);
+    try {
+        if (!localStorage.getItem('paperwell.defaultFont.v1')) {
+            localStorage.setItem('paperwell.defaultFont.v1', '1');
+            if (o.text?.family === 'sans') {
+                const next = { ...o, text: { ...o.text, family: 'googlesans' } };
+                localStorage.setItem('paperwell.opts', JSON.stringify(next));
+                return next;
+            }
+        }
+    } catch { /* yoksay */ }
+    return o;
+};
+
 export const DEFAULT_OPTS = {
     draw: { mode: 'pen', color: '#1d4ed8', width: 3, opacity: 1 },
     highlight: { kind: 'highlight', color: '#fde047' },
     shape: { kind: 'rect', stroke: '#e11d48', fill: '', width: 2, opacity: 1 },
-    text: { family: 'sans', size: 14, color: '#111827', bold: false, italic: false, align: 'left' },
+    text: { family: 'googlesans', size: 14, color: '#111827', bold: false, italic: false, align: 'left' },
     erase: { size: 28, mode: 'fast' },
     grab: { fill: 'ai' },
     redact: { fill: 'black' },
@@ -29,7 +45,7 @@ const initialState = {
     future: [],
     dirty: false,
     tool: 'select',
-    opts: load('paperwell.opts', DEFAULT_OPTS),
+    opts: loadOpts(),
     selected: null, // { pageId, id }
     editing: null, // { kind:'text', pageId, id } | { kind:'line', pageIndex, lineId } | { kind:'image', pageIndex, imageId }
     zoom: 1,
