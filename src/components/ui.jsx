@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Check } from 'lucide-react';
+import { useBrandKit } from '../core/brandKit';
 
 export const cx = (...a) => a.filter(Boolean).join(' ');
 
@@ -142,7 +143,10 @@ export function Segmented({ value, onChange, options, className }) {
 
 export const SWATCHES = ['#111827', '#ffffff', '#6b7280', '#e11d48', '#f97316', '#facc15', '#22c55e', '#06b6d4', '#2563eb', '#7c3aed', '#db2777', '#92400e'];
 
-export function ColorPicker({ value, onChange, allowNone, swatches = SWATCHES }) {
+export function ColorPicker({ value, onChange, allowNone, swatches }) {
+    const { colors } = useBrandKit();
+    // Varsayılan renk listesinin başında marka renkleri gelir
+    if (!swatches) swatches = [...new Set([...colors.map((c) => c.hex.toLowerCase()), ...SWATCHES])].slice(0, 14);
     return (
         <div className="flex flex-wrap gap-1.5 items-center">
             {allowNone && (

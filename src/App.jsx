@@ -6,6 +6,7 @@ import Toaster from './components/Toaster';
 import { useLocale } from './i18n';
 import { registerCssFonts } from './core/fonts';
 import { loadStoredFonts } from './core/fontStore';
+import { loadBrandKit } from './core/brandKit';
 import { useTheme } from './app/theme';
 import { openFile } from './store/actions';
 import { takeOpenedFiles, onOpenFiles, setWindowTitle } from './platform';
@@ -16,7 +17,7 @@ function Root() {
     useLocale();
     useTheme();
 
-    useEffect(() => { registerCssFonts(); loadStoredFonts(); }, []);
+    useEffect(() => { registerCssFonts(); loadStoredFonts(); loadBrandKit(); }, []);
 
     // Masaüstü: "Birlikte aç" ile gelen ya da sonradan çift tıklanan dosyalar
     useEffect(() => {
