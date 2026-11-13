@@ -10,9 +10,11 @@ import { mergeDiacritics } from './ocrMerge';
 import { encodeImage2, decode2, isSam2Cached } from './segment2';
 import { inpaintMigan } from './inpaint/migan';
 import { inpaintLama } from './inpaint/lama';
+import { flatFill } from './inpaint/flatFill';
 import { FONT_FAMILIES, loadAllFonts } from './fonts';
 import { predictAlpha, isBgModelCached } from './bgremove';
 import { getBackend } from './inference';
+import { maskInter as gridInter, selectLayerMasks, groupLevels } from './layerSelect';
 
 /** Masaüstü GPU'da ve model indirilmişse nesneler LayerD ile ayrılır */
 export const layerdAvailable = async () => (await getBackend()).kind === 'gpu';
@@ -184,8 +186,12 @@ function harmonizeFonts(lines) {
     }
 }
 
-/** Font eşleşmesi bu puanın üstündeyse yazı doğrudan canlı metin olur; altındaysa (süslü, konturlu yazı) görsel kalır */
-export const LIVE_TEXT_SCORE = 0.65;
+/**
+ * Font eşleşmesi bu puanın üstündeyse yazı doğrudan canlı metin olur; altındaysa afişin pikselleriyle kalır.
+ * 0.8: yeniden yazılan metin özgünüyle neredeyse üst üste biner. Daha düşük puanlarda (0.65-0.8) yazı gözle görülür
+ * biçimde kalınlaşıyor/irileşiyordu; aslına sadık kalmak, kendiliğinden düzenlenebilir olmaktan önce gelir.
+ */
+export const LIVE_TEXT_SCORE = 0.8;
 
 /**
  * Metin katmanları. Kutu ve koordinatlar canvas pikseli; size piksel.
@@ -539,6 +545,9 @@ function cutElement(img, W, H, c, mask) {
 
 /** Onarım maskesini bağlı bölgelere ayırıp her birini bağlamıyla doldurur */
 async function fillHoles(img, W, H, mask, { best, onProgress }) {
+    // Tasarımlar çoğunlukla düz renk ve degradedir (LayerD'nin düz renk varsayımı): çevresi düz/degrade olan delikler
+    // çevreye oturtulan düzlemle doldurulur (kesin ve anında); yalnız kalanlar (fotoğraf, iki renk sınırı) sinir ağına gider.
+    mask = flatFill(img, W, H, mask).rest;
     const f = 4, sw = Math.ceil(W / f), sh = Math.ceil(H / f);
     const small = new Uint8Array(sw * sh);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (mask[y * W + x]) small[((y / f) | 0) * sw + ((x / f) | 0)] = 1;
@@ -696,8 +705,15 @@ async function magicLayersLayerD(canvas, { fill, onProgress }) {
     const found = elements.reduce((sum, e) => sum + e.area, 0);
     if (found < 0.03 && (await isSam2Cached('basePlus'))) {
         onProgress?.(0.6, 'segment');
+        // Hangi maskeler katman olur: zeminle kontrastı düşük olanlar (soluk filigran harfleri) ve bir nesnenin parçaları
+        // (laptopun klavyesi) atılır; yalnız büyük kapların (panel, kutu) içindekiler ayrı katman kalır.
+        const thumb = () => {
+            const c = new OffscreenCanvas(G, G), x = c.getContext('2d');
+            x.drawImage(current(), 0, 0, G, G);
+            return x.getImageData(0, 0, G, G).data;
+        };
         const masks = await segmentEverything(current(), W, H, step(0.6, 0.75, 'segment'));
-        const levels = maskLevels(masks);
+        const levels = groupLevels(selectLayerMasks(masks, thumb(), G, { minContrast: 55 }));
         for (let L = 0; L < levels.length; L++) {
             const { alpha, groups } = levelGroups(levels[L], W, H);
             if (groups.length) await peel(alpha, groups, depth + L, 0.75 + (L / levels.length) * 0.15, 0.75 + ((L + 1) / levels.length) * 0.15);
@@ -710,11 +726,13 @@ async function magicLayersLayerD(canvas, { fill, onProgress }) {
             for (let i = 0; i < G * G; i++) if (m.bin[i] && filled[Math.min(H - 1, Math.floor(((((i / G) | 0) + 0.5) / G) * H)) * W + Math.min(W - 1, Math.floor((((i % G) + 0.5) / G) * W))]) n++;
             return n / m.on;
         };
-        const containers = (await segmentEverything(current(), W, H, step(0.9, 0.95, 'segment'), { grid: 12, minArea: 0.02, minScore: 0.7, minStab: 0.85 }))
-            .filter((m) => filledShare(m) < 0.8);
+        // (containerArea 0: hepsi kap sayılır, yalnız kontrast süzgeci uygulanır)
+        const containers = selectLayerMasks((await segmentEverything(current(), W, H, step(0.9, 0.95, 'segment'), { grid: 12, minArea: 0.02, minScore: 0.7, minStab: 0.85 }))
+            .filter((m) => filledShare(m) < 0.8), thumb(), G, { containerArea: 0 });
         if (containers.length) {
             const { alpha, groups } = levelGroups(containers, W, H);
             absorbFilled(groups, alpha, filled, W, H);
+            for (const g of groups) recolorFilled(img, g, filled);
             // genişletme yok: büyük, girintili kabın genişletme halkası katmanın dışında kalıp dolguyla bozulur
             if (groups.length) await peel(alpha, groups, depth + levels.length, 0.95, 1, { dilate: 0 });
         }
@@ -771,6 +789,26 @@ async function segmentEverything(canvas, W, H, onProgress, { grid = 24, minArea 
 }
 
 /**
+ * Kabın içindeki doldurulmuş pikseller (üstündeki öğelerin yerleri) sinir ağının tahminidir ve büyük boşlukta koyu bir
+ * blok olabilir. Kabın özgün pikselleri düz renkse (çoğu ortanca renge yakın: beyaz panel gibi) o pikseller bu renge boyanır.
+ */
+function recolorFilled(img, g, filled) {
+    const real = g.pixels.filter((i) => !filled[i]);
+    if (real.length < 50) return;
+    const step = Math.max(1, Math.floor(real.length / 4000));
+    const ch = [[], [], []];
+    for (let k = 0; k < real.length; k += step) for (let c = 0; c < 3; c++) ch[c].push(img[real[k] * 4 + c]);
+    const med = ch.map((v) => v.sort((a, b) => a - b)[v.length >> 1]);
+    let near = 0, n = 0;
+    for (let k = 0; k < real.length; k += step, n++) {
+        const i = real[k] * 4;
+        if (Math.max(Math.abs(img[i] - med[0]), Math.abs(img[i + 1] - med[1]), Math.abs(img[i + 2] - med[2])) <= 28) near++;
+    }
+    if (near / n < 0.7) return;
+    for (const i of g.pixels) if (filled[i]) { img[i * 4] = med[0]; img[i * 4 + 1] = med[1]; img[i * 4 + 2] = med[2]; }
+}
+
+/**
  * Kap maskesi, üstündeki öğelerin doldurulmuş yerlerini (SAM'e ayrı bölge gibi görünür) dışarıda bırakır; o pikseller
  * kabın parçasıdır: maskeye bitişik doldurulmuş pikseller (kutusu içinde, başka kabın olmayan) tam opak olarak eklenir.
  * Yoksa öğelerin kenar halkasında kabın yerine zeminin dolgusu görünür.
@@ -796,33 +834,7 @@ function absorbFilled(groups, alpha, filled, W, H) {
     }
 }
 
-/** İki maskenin kesişimi (kutular kesişmiyorsa 0) */
-function maskInter(a, b) {
-    const x0 = Math.max(a.box[0], b.box[0]), y0 = Math.max(a.box[1], b.box[1]), x1 = Math.min(a.box[2], b.box[2]), y1 = Math.min(a.box[3], b.box[3]);
-    if (x0 > x1 || y0 > y1) return 0;
-    let n = 0;
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (a.bin[y * G + x] && b.bin[y * G + x]) n++;
-    return n;
-}
-const maskIoU = (a, b) => { const i = maskInter(a, b); return i / (a.on + b.on - i); };
-
-/**
- * İçerme seviyeleri: hiçbir maskeyi içermeyenler en üstte (0), içindekilerin en yükseğinin bir altı.
- * (hap → program kutusu → pencere). En fazla 4 seviye; daha derindekiler sonuncuya katılır.
- */
-function maskLevels(masks) {
-    const order = [...masks].sort((a, b) => a.on - b.on);
-    for (const m of order) {
-        m.level = 0;
-        for (const s of order) {
-            if (s === m || s.on >= m.on || s.level === undefined) continue;
-            if (maskInter(s, m) >= s.on * 0.9) m.level = Math.max(m.level, s.level + 1);
-        }
-    }
-    const levels = [];
-    for (const m of order) (levels[Math.min(3, m.level)] ||= []).push(m);
-    return levels.filter(Boolean);
-}
+const maskIoU = (a, b) => { const i = gridInter(a, b, G); return i / (a.on + b.on - i); };
 
 /** Bir seviyedeki maskeleri tam çözünürlükte öğe gruplarına çevirir (çakışan pikselde alfası yüksek olan) */
 function levelGroups(masks, W, H) {
