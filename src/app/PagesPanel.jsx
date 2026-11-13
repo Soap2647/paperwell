@@ -1,16 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useRef, useState } from 'react';
 import { RotateCcw, RotateCw, Trash2, Copy, FilePlus2, FileUp, Download } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { reorderPages, rotatePages, deletePages, duplicatePage, insertBlankPage, insertPdfFiles, extractPages } from '../store/actions';
 import { renderPageToCanvas } from '../core/render';
 import { IconButton, Tooltip, cx } from '../components/ui';
 import { t } from '../i18n';
+import ObjectLayer from './layers/ObjectLayer';
 
 const thumbCache = new WeakMap(); // bytes → Map(index → dataURL)
 
 function Thumb({ bytes, index, page }) {
     const [src, setSrc] = useState(() => thumbCache.get(bytes)?.get(index) || null);
     const ref = useRef(null);
+    // Sayfaya eklenen nesneler (görsel, metin, şekil) küçük resimde de görünsün; sürükleme sırasında gecikmeli güncellenir
+    const objects = useDeferredValue(useEditor().state.objects[page.id]);
     useEffect(() => {
         const cached = thumbCache.get(bytes)?.get(index);
         if (cached) { setSrc(cached); return; }
@@ -31,8 +34,13 @@ function Thumb({ bytes, index, page }) {
         return () => { alive = false; io.disconnect(); };
     }, [bytes, index, page.width]);
     return (
-        <div ref={ref} className="bg-white rounded-[3px] overflow-hidden shadow-soft ring-1 ring-black/5" style={{ width: 130, aspectRatio: `${page.width} / ${page.height}` }}>
+        <div ref={ref} className="relative bg-white rounded-[3px] overflow-hidden shadow-soft ring-1 ring-black/5" style={{ width: 130, aspectRatio: `${page.width} / ${page.height}` }}>
             {src ? <img src={src} alt="" className="w-full h-full object-cover" draggable={false} /> : <div className="w-full h-full skeleton" />}
+            {objects?.length > 0 && (
+                <div className="absolute left-0 top-0" style={{ width: page.width, height: page.height, transform: `scale(${130 / page.width})`, transformOrigin: '0 0', pointerEvents: 'none' }}>
+                    <ObjectLayer page={page} zoom={130 / page.width} interactive={false} objects={objects} />
+                </div>
+            )}
         </div>
     );
 }

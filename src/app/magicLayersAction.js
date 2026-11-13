@@ -10,12 +10,13 @@ import { isMiganCached, loadMigan } from '../core/inpaint/migan';
 import { magicLayers, textToObject, layerdAvailable } from '../core/magicLayers';
 import { BG_MODELS, isBgModelCached, loadBgModel } from '../core/bgremove';
 import { toast } from '../components/Toaster';
+import { findObject } from '../store/editor';
 import { t } from '../i18n';
 
 const STAGES = { segment: 'Nesneler bulunuyor...', text: 'Yazılar okunuyor...', fill: 'Arka plan dolduruluyor...' };
 
-export async function runMagicLayers(ed, { fill = 'best' } = {}) {
-    // Eksik modelleri listele, kullanıcı onayıyla indir
+/** Eksik modelleri listeler, kullanıcı onayıyla indirir. false: vazgeçildi ya da indirilemedi */
+async function ensureModels(ed, fill) {
     // masaüstü GPU'da nesneleri LayerD ayırır (SAM 2 gerekmez)
     const layerd = await layerdAvailable();
     const needs = [
@@ -30,15 +31,70 @@ export async function runMagicLayers(ed, { fill = 'best' } = {}) {
     ].filter(([cached]) => !cached);
     if (needs.length) {
         const mb = Math.round(needs.reduce((s, [, b]) => s + b, 0) / 1e6);
-        if (!window.confirm(`${t('Sihirli Katmanlar için yapay zekâ modelleri indirilecek. Bir kez iner, sonra çevrimdışı çalışır.')} (~${mb} MB)`)) return;
+        if (!window.confirm(`${t('Sihirli Katmanlar için yapay zekâ modelleri indirilecek. Bir kez iner, sonra çevrimdışı çalışır.')} (~${mb} MB)`)) return false;
         const ok = await withBusy(ed, t('Model indiriliyor'), async (progress) => {
             for (let i = 0; i < needs.length; i++) {
                 await needs[i][2]((p) => progress((i + (p || 0)) / needs.length, `${t('Model indiriliyor')} ${Math.round(((i + (p || 0)) / needs.length) * 100)}%`));
             }
             return true;
         });
-        if (!ok) return;
+        if (!ok) return false;
     }
+    return true;
+}
+
+const toDataUrl = (canvas) => new Promise((r) => { canvas.convertToBlob({ type: 'image/png' }).then((b) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); });
+
+/**
+ * Sihirli Katmanlar sonucunu katman nesnelerine çevirir.
+ * k: canvas pikseli → sayfa birimi; (ox, oy): canvas başlangıcının sayfadaki konumu (görsel nesnesinde nesnenin sol üstü)
+ */
+async function buildLayers(res, k, ox = 0, oy = 0) {
+    const layers = [];
+    const image = async (c, name, extra) => ({ id: newId('ob'), type: 'image', x: ox + c.x * k, y: oy + c.y * k, w: c.w * k, h: c.h * k, src: await toDataUrl(c.canvas), opacity: 1, name, ...extra });
+    // derindeki (LayerD'nin sonraki turlarında çıkan) ve büyük nesneler altta, küçükler üstte; yazılar en üstte
+    for (const e of [...res.elements].sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0) || b.area - a.area)) layers.push(await image(e, t('Nesne')));
+    // Font eşleşmesi güçlüyse yazı canlı metin olur (afişteki pikselleri rasterSource'ta: "Afişteki haline dön").
+    // Süslü / konturlu yazılar afişin kendi pikselleriyle kalır; "Metni düzenle" tahmini fontla canlı metne çevirir.
+    // (iki yönde de saklanan konum diğerine göreli: katman taşınsa da karşılığı yerinde açılır)
+    for (const tx of res.texts) {
+        const o = textToObject(tx, k);
+        o.x += ox; o.y += oy;
+        const img = await image(tx.layer, tx.text, {});
+        if (tx.live) layers.push({ id: newId('ob'), ...o, name: tx.text, rasterSource: { src: img.src, x: img.x - o.x, y: img.y - o.y, w: img.w, h: img.h } });
+        else layers.push({ ...img, textSource: { ...o, x: o.x - img.x, y: o.y - img.y } });
+    }
+    return layers;
+}
+
+/** Seçili görsel nesnesini katmanlara ayırır: nesne temizlenmiş arka plan olur, öğeler ve yazılar üstüne gelir (tek geri alma adımı) */
+export async function runMagicLayersOnObject(ed, objectId, { fill = 'best' } = {}) {
+    const found = findObject(ed.get().objects, objectId);
+    if (!found || found.obj.type !== 'image') return;
+    if (found.obj.rotation) { toast(t('Önce görselin açısını sıfırlayın'), 'error'); return; }
+    if (!(await ensureModels(ed, fill))) return;
+    await withBusy(ed, t('Katmanlara ayrılıyor...'), async (progress) => {
+        const o = found.obj;
+        // Nesnenin kendi görseli, en çok 2000 px
+        const bmp = await createImageBitmap(await (await fetch(o.src)).blob());
+        const sc = Math.min(1, 2000 / Math.max(bmp.width, bmp.height));
+        const canvas = new OffscreenCanvas(Math.round(bmp.width * sc), Math.round(bmp.height * sc));
+        canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+        const res = await magicLayers(canvas, { fill, onProgress: (p, stage) => progress(p, t(STAGES[stage] || 'Katmanlara ayrılıyor...')) });
+        const s = ed.get();
+        const list = s.objects[found.pageId] || [];
+        const i = list.findIndex((q) => q.id === objectId);
+        if (i < 0) return;
+        const bg = { ...o, src: await toDataUrl(res.background), name: t('Arka plan') };
+        const layers = await buildLayers(res, o.w / canvas.width, o.x, o.y);
+        const objects = { ...s.objects, [found.pageId]: [...list.slice(0, i), bg, ...layers, ...list.slice(i + 1)] };
+        ed.dispatch({ type: 'COMMIT', bytes: s.doc.bytes, objects });
+        toast(`${res.texts.length} ${t('yazı')}, ${res.elements.length} ${t('nesne katmanı oluşturuldu')}`, 'success', 5000);
+    });
+}
+
+export async function runMagicLayers(ed, { fill = 'best' } = {}) {
+    if (!(await ensureModels(ed, fill))) return;
 
     await withBusy(ed, t('Katmanlara ayrılıyor...'), async (progress) => {
         const s = ed.get();
@@ -60,23 +116,7 @@ export async function runMagicLayers(ed, { fill = 'best' } = {}) {
         const bytes = await rebuildPages(s.doc.bytes, plan);
         const pages = await readPages(bytes, plan.map((p) => p.id));
 
-        const k = page.width / canvas.width;
-        const layers = [];
-        const image = async (c, name, extra) => {
-            const src = await new Promise((r) => { c.canvas.convertToBlob({ type: 'image/png' }).then((b) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); }); });
-            return { id: newId('ob'), type: 'image', x: c.x * k, y: c.y * k, w: c.w * k, h: c.h * k, src, opacity: 1, name, ...extra };
-        };
-        // derindeki (LayerD'nin sonraki turlarında çıkan) ve büyük nesneler altta, küçükler üstte; yazılar en üstte
-        for (const e of [...res.elements].sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0) || b.area - a.area)) layers.push(await image(e, t('Nesne')));
-        // Font eşleşmesi güçlüyse yazı canlı metin olur (afişteki pikselleri rasterSource'ta: "Afişteki haline dön").
-        // Süslü / konturlu yazılar afişin kendi pikselleriyle kalır; "Metni düzenle" tahmini fontla canlı metne çevirir.
-        // (iki yönde de saklanan konum diğerine göreli: katman taşınsa da karşılığı yerinde açılır)
-        for (const tx of res.texts) {
-            const o = textToObject(tx, k);
-            const img = await image(tx.layer, tx.text, {});
-            if (tx.live) layers.push({ id: newId('ob'), ...o, name: tx.text, rasterSource: { src: img.src, x: img.x - o.x, y: img.y - o.y, w: img.w, h: img.h } });
-            else layers.push({ ...img, textSource: { ...o, x: o.x - img.x, y: o.y - img.y } });
-        }
+        const layers = await buildLayers(res, page.width / canvas.width);
 
         ed.dispatch({ type: 'SET_TOOL', tool: 'select' });
         ed.dispatch({ type: 'COMMIT', bytes, pages, objects: { ...s.objects, [page.id]: [...(s.objects[page.id] || []), ...layers] } });

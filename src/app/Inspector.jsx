@@ -20,7 +20,7 @@ import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import { TOOLS } from './tools';
 import LayersPanel from './LayersPanel';
-import { runMagicLayers } from './magicLayersAction';
+import { runMagicLayers, runMagicLayersOnObject } from './magicLayersAction';
 import { readImageFile } from './imageFiles';
 import { loadSignatures, saveSignatures } from './dialogs/SignatureDialog';
 
@@ -136,7 +136,8 @@ function ImageEditPanel({ editing }) {
 // ─── Seçili nesne ───────────────────────────────────────────────────────────
 
 function ObjectPanel({ o, pageId }) {
-    const { dispatch } = useEditor();
+    const ed = useEditor();
+    const { dispatch } = ed;
     const update = (changes) => dispatch({ type: 'UPDATE_OBJECT', id: o.id, changes });
     const live = (changes) => dispatch({ type: 'UPDATE_OBJECT', id: o.id, changes, transient: true });
     const checkpoint = () => dispatch({ type: 'CHECKPOINT' });
@@ -218,7 +219,10 @@ function ObjectPanel({ o, pageId }) {
                                 </p>
                             </>
                         ) : (
-                            <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: o.id } })}>{t('Arka planı kaldır')}</Button>
+                            <>
+                                {!o.signature && <Button variant="primary" icon={Layers} onClick={() => runMagicLayersOnObject(ed, o.id)}>{t('Sihirli Katmanlar')}</Button>}
+                                <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: o.id } })}>{t('Arka planı kaldır')}</Button>
+                            </>
                         )}
                     </>
                 )}
