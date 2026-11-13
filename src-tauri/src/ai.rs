@@ -440,6 +440,13 @@ fn is_oom(e: &str) -> bool {
     e.contains("8007000E") || e.contains("bad allocation") || e.to_lowercase().contains("out of memory")
 }
 
+/// Ekran kartı sıfırlandı mı (DXGI_ERROR_DEVICE_REMOVED / HUNG / RESET / DRIVER_INTERNAL_ERROR): çoğunlukla Windows'un
+/// zaman aşımı kurtarması (TDR), yavaş ya da meşgul kartta büyük bir model parçası sınırı aşınca. Cihaz ve ona bağlı tüm
+/// DirectML oturumları geçersizdir.
+fn is_device_lost(e: &str) -> bool {
+    ["887A0005", "887A0006", "887A0007", "887A0020", "device-lost"].iter().any(|c| e.contains(c))
+}
+
 impl Ai {
     /// Diğer GPU oturumlarını boşaltır (gerektiğinde yeniden açılırlar); CPU oturumları ekran kartı belleği tutmaz
     fn evict_others(&self, keep: usize) {
@@ -494,6 +501,16 @@ fn run(ai: &Ai, body: &[u8]) -> Result<Vec<u8>, String> {
                     eprintln!("[ai] {name} {} {} ms", if s.gpu.load(Relaxed) { "gpu" } else { "cpu" }, t0.elapsed().as_millis());
                 }
                 return Ok(v);
+            }
+            // cihaz kaybı: tüm GPU oturumları bırakılır (yeniden açılınca yeni cihaz), bir kez daha GPU'da denenir
+            Err(e) if is_device_lost(&e) && attempt == 0 => {
+                ai.evict_others(head.session);
+                *guard = None;
+            }
+            Err(e) if is_device_lost(&e) && s.gpu.load(Relaxed) => {
+                s.gpu.store(false, Relaxed);
+                *guard = None;
+                ai.gpu_failed("Ekran kartı yanıt vermedi (zaman aşımı); bu model CPU'da çalışıyor".into());
             }
             Err(e) if is_oom(&e) && attempt == 0 => ai.evict_others(head.session),
             Err(e) if is_oom(&e) && attempt == 1 && s.gpu.load(Relaxed) => {
