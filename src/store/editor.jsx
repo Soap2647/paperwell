@@ -119,6 +119,14 @@ function reducer(s, a) {
             if (a.transient) return { ...s, objects };
             return { ...s, objects, past: pushPast(s), future: [], dirty: true };
         }
+        case 'UPDATE_OBJECTS': {
+            // updates: [{ id, changes }] — gruptaki nesneler birlikte taşınır; transient: geri alma adımı açmaz
+            const byId = new Map(a.updates.map((u) => [u.id, u.changes]));
+            const objects = {};
+            for (const [pid, list] of Object.entries(s.objects)) objects[pid] = list.map((o) => (byId.has(o.id) ? { ...o, ...byId.get(o.id) } : o));
+            if (a.transient) return { ...s, objects };
+            return { ...s, objects, past: pushPast(s), future: [], dirty: true };
+        }
         case 'REMOVE_OBJECT': {
             const f = findObject(s.objects, a.id);
             if (!f) return s;

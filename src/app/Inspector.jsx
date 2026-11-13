@@ -21,6 +21,7 @@ import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import { TOOLS } from './tools';
 import LayersPanel from './LayersPanel';
+import BrandPanel from './BrandPanel';
 import { runMagicLayers, runMagicLayersOnObject } from './magicLayersAction';
 import { readImageFile } from './imageFiles';
 import { loadSignatures, saveSignatures } from './dialogs/SignatureDialog';
@@ -144,6 +145,18 @@ function ImageEditPanel({ editing }) {
 
 // ─── Seçili nesne ───────────────────────────────────────────────────────────
 
+/** Gruptaki nesne: birlikte taşındığını söyler, tek tıkla çözer */
+function GroupInfo({ o, pageId }) {
+    const { state, dispatch } = useEditor();
+    const members = (state.objects[pageId] || []).filter((q) => q.groupId === o.groupId);
+    return (
+        <div className="rounded-xl border border-line bg-surface-2 p-2.5 text-xs text-fg-2 space-y-2">
+            <p className="leading-relaxed">{t('Bu parça bir grubun içinde')} ({members.length}): {t('birlikte taşınırlar.')}</p>
+            <Button size="sm" onClick={() => dispatch({ type: 'UPDATE_OBJECTS', updates: members.map((q) => ({ id: q.id, changes: { groupId: undefined } })) })}>{t('Grubu çöz')}</Button>
+        </div>
+    );
+}
+
 function ObjectPanel({ o, pageId }) {
     const ed = useEditor();
     const { dispatch } = ed;
@@ -214,6 +227,7 @@ function ObjectPanel({ o, pageId }) {
                         <Field label={t('Renk')}><ColorPicker value={o.color} swatches={HIGHLIGHT_COLORS.concat(['#e11d48', '#2563eb'])} onChange={(color) => update({ color })} /></Field>
                     </>
                 )}
+                {o.groupId && <GroupInfo o={o} pageId={pageId} />}
                 {o.type === 'image' && (
                     <>
                         {opacity}
@@ -310,6 +324,7 @@ function ToolPanel({ tool }) {
             {tool === 'image' && <ImageToolPanel />}
             {tool === 'sign' && <SignToolPanel />}
             {tool === 'note' && <Field label={t('Renk')}><ColorPicker value={opts.color} swatches={['#facc15', '#fb923c', '#4ade80', '#60a5fa', '#f472b6', '#c084fc']} onChange={(color) => set({ color })} /></Field>}
+            {tool === 'brand' && <BrandPanel />}
             {tool === 'erase' && <EraseToolPanel opts={opts} set={set} />}
             {tool === 'grab' && <GrabToolPanel opts={opts} set={set} />}
             {tool === 'redact' && <RedactToolPanel opts={opts} set={set} />}

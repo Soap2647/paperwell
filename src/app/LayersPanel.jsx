@@ -1,5 +1,5 @@
 // Katmanlar: geçerli sayfadaki nesneler (en üstteki başta); seç, gizle, kilitle, sırala.
-import { Eye, EyeOff, Lock, LockOpen, ChevronUp, ChevronDown, Type, Image as ImageIcon, Shapes, PenTool, Highlighter, StickyNote } from 'lucide-react';
+import { Eye, EyeOff, Lock, LockOpen, ChevronUp, ChevronDown, Type, Image as ImageIcon, Shapes, PenTool, Highlighter, StickyNote, Link2 } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { cx } from '../components/ui';
 import { t } from '../i18n';
@@ -32,8 +32,11 @@ export default function LayersPanel() {
                         <li key={o.id} className={cx('group flex items-center gap-1 pl-1.5 pr-1 h-8 rounded-lg', sel ? 'bg-accent-soft text-accent-text' : 'hover:bg-surface-2', o.hidden && 'opacity-50')}>
                             <button type="button" className="flex-1 min-w-0 flex items-center gap-2 text-left text-[12.5px] h-full"
                                 onClick={() => dispatch({ type: 'SET', values: { selected: { pageId: page.id, id: o.id }, editing: null } })}>
-                                <Icon className="w-3.5 h-3.5 shrink-0 text-fg-3" />
+                                {o.type === 'image' && o.src && !o.signature
+                                    ? <span className="w-6 h-6 shrink-0 rounded checker overflow-hidden flex items-center justify-center"><img src={o.src} alt="" className="max-w-full max-h-full object-contain" draggable={false} /></span>
+                                    : <Icon className="w-3.5 h-3.5 shrink-0 text-fg-3" />}
                                 <span className="truncate">{label(o)}</span>
+                                {o.groupId && <Link2 className="w-3 h-3 shrink-0 text-fg-3" aria-label={t('Grupta')} />}
                             </button>
                             <span className="hidden group-hover:flex">
                                 <button type="button" className={btn} aria-label={t('Öne getir')} disabled={i === 0} onClick={() => dispatch({ type: 'REORDER_OBJECT', id: o.id, delta: 1 })}><ChevronUp className="w-3.5 h-3.5" /></button>

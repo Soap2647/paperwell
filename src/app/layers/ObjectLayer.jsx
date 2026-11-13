@@ -40,8 +40,9 @@ export default function ObjectLayer({ page, zoom, interactive, objects }) {
             if (snapOn && d.handle === 'move') ({ dx: ndx, dy: ndy } = snapMove(d.box, dx, dy, d.targets, thr));
             else if (snapOn && edge) ({ dx: ndx, dy: ndy } = snapResize(d.box, d.handle, dx, dy, d.targets, thr));
             const changes = d.handle === 'move' ? moveBy(d.orig, ndx, ndy) : resizeObject(d.orig, d.handle, ndx, ndy, d.keepAspect !== e.shiftKey);
-            dispatch({ type: 'UPDATE_OBJECT', id: d.id, changes, transient: true });
-            const nb = bbox({ ...d.orig, ...changes });
+            if (d.members.length > 1) dispatch({ type: 'UPDATE_OBJECTS', updates: d.members.map((q) => ({ id: q.id, changes: moveBy(q, ndx, ndy) })), transient: true });
+            else dispatch({ type: 'UPDATE_OBJECT', id: d.id, changes, transient: true });
+            const nb = d.members.length > 1 ? { x: d.box.x + ndx, y: d.box.y + ndy, w: d.box.w, h: d.box.h } : bbox({ ...d.orig, ...changes });
             const label = d.handle === 'move' ? `X ${mmText(nb.x)}  Y ${mmText(nb.y)} mm`
                 : d.orig.type === 'text' ? `${changes.size} pt`
                     : d.handle === 'p1' || d.handle === 'p2' ? null : `${mmText(nb.w)} × ${mmText(nb.h)} mm`;
@@ -59,9 +60,16 @@ export default function ObjectLayer({ page, zoom, interactive, objects }) {
         e.preventDefault();
         if (selectedId !== o.id) dispatch({ type: 'SET', values: { selected: { pageId: page.id, id: o.id }, editing: null } });
         if (o.locked) return; // kilitli katman seçilir ama taşınmaz
+        // Grup (ör. buton + içindeki yazı): taşırken üyeler birlikte gider; kılavuz yakalama grubun toplam kutusuna göre
+        const members = handle === 'move' && o.groupId ? objs.filter((q) => q.groupId === o.groupId && !q.locked) : [o];
+        const boxes = members.map(bbox);
+        const x0 = Math.min(...boxes.map((b) => b.x)), y0 = Math.min(...boxes.map((b) => b.y));
+        const x1 = Math.max(...boxes.map((b) => b.x + b.w)), y1 = Math.max(...boxes.map((b) => b.y + b.h));
+        const ids = new Set(members.map((q) => q.id));
         drag.current = {
-            id: o.id, handle, sx: e.clientX, sy: e.clientY, orig: o, keepAspect: o.type === 'image',
-            box: bbox(o), targets: snapTargets(objs, o.id, page, guidesRef.current, bbox),
+            id: o.id, handle, sx: e.clientX, sy: e.clientY, orig: o, keepAspect: o.type === 'image', members,
+            box: members.length > 1 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : bbox(o),
+            targets: snapTargets(objs.filter((q) => !ids.has(q.id)), null, page, guidesRef.current, bbox),
         };
     };
 

@@ -107,45 +107,68 @@ function matchFont(text, crop, tp) {
     const d = [fg[0] - bg[0], fg[1] - bg[1], fg[2] - bg[2]], dd = d[0] ** 2 + d[1] ** 2 + d[2] ** 2 || 1;
     const ink = new Float32Array(iw * ih);
     for (let i = 0; i < iw * ih; i++) ink[i] = Math.min(1, Math.max(0, ((px[i * 4] - bg[0]) * d[0] + (px[i * 4 + 1] - bg[1]) * d[1] + (px[i * 4 + 2] - bg[2]) * d[2]) / dd));
-    const A = blur3(ink, iw, ih);
+    // Kaba → ince: tüm adaylar küçültülmüş (en çok ~24 px yüksek) mürekkep haritasında elenir, en iyi 14'ü tam çözünürlükte puanlanır
+    const prep = (sc) => {
+        if (sc >= 1) return { w: iw, h: ih, A: blur3(ink, iw, ih) };
+        const w = Math.max(8, Math.round(iw * sc)), h = Math.max(6, Math.round(ih * sc));
+        const small = new Float32Array(w * h);
+        for (let y = 0; y < h; y++) {
+            const y0 = Math.floor((y * ih) / h), y1 = Math.max(y0 + 1, Math.floor(((y + 1) * ih) / h));
+            for (let x = 0; x < w; x++) {
+                const x0 = Math.floor((x * iw) / w), x1 = Math.max(x0 + 1, Math.floor(((x + 1) * iw) / w));
+                let sum = 0, n = 0;
+                for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) { sum += ink[yy * iw + xx]; n++; }
+                small[y * w + x] = sum / n;
+            }
+        }
+        return { w, h, A: blur3(small, w, h) };
+    };
     const mc = new OffscreenCanvas(8, 8).getContext('2d');
-    const ranking = [];
-    const tried = new Set();
-    const score = (cand) => {
-        if (tried.has(fontKey(cand))) return;
-        tried.add(fontKey(cand));
+    const scoreOn = (cand, P) => {
         mc.font = fontCss(cand, 100);
         const m = mc.measureText(text);
         const w100 = m.actualBoundingBoxLeft + m.actualBoundingBoxRight, h100 = m.actualBoundingBoxAscent + m.actualBoundingBoxDescent;
-        if (!w100 || !h100) return;
-        const size = (iw / w100) * 100, ch = (h100 * size) / 100;
+        if (!w100 || !h100) return null;
+        const size = (P.w / w100) * 100, ch = (h100 * size) / 100;
         // oranı çok farklı adaylar çizilmeden elenir
-        if (ch > ih * 1.6 || ch < ih / 1.6) return;
-        const Hc = Math.max(ih, Math.ceil(ch));
-        const c = new OffscreenCanvas(iw, Hc), ctx = c.getContext('2d');
+        if (ch > P.h * 1.6 || ch < P.h / 1.6) return null;
+        const Hc = Math.max(P.h, Math.ceil(ch));
+        const c = new OffscreenCanvas(P.w, Hc), ctx = c.getContext('2d', { willReadFrequently: true });
         ctx.font = fontCss(cand, size);
         const mm = ctx.measureText(text);
         ctx.fillText(text, mm.actualBoundingBoxLeft, mm.actualBoundingBoxAscent + (Hc - (mm.actualBoundingBoxAscent + mm.actualBoundingBoxDescent)) / 2);
-        const r = ctx.getImageData(0, 0, iw, Hc).data;
-        const C = new Float32Array(iw * Hc);
-        for (let i = 0; i < iw * Hc; i++) C[i] = r[i * 4 + 3] / 255;
-        const B = blur3(C, iw, Hc);
-        const off = ((Hc - ih) / 2) | 0;
+        const r = ctx.getImageData(0, 0, P.w, Hc).data;
+        const C = new Float32Array(P.w * Hc);
+        for (let i = 0; i < P.w * Hc; i++) C[i] = r[i * 4 + 3] / 255;
+        const B = blur3(C, P.w, Hc);
+        const off = ((Hc - P.h) / 2) | 0;
         let mn = 0, mx = 0;
         for (let y = 0; y < Hc; y++) {
             const yy = y - off;
-            for (let x = 0; x < iw; x++) {
-                const a = yy >= 0 && yy < ih ? A[yy * iw + x] : 0, b = B[y * iw + x];
+            for (let x = 0; x < P.w; x++) {
+                const a = yy >= 0 && yy < P.h ? P.A[yy * P.w + x] : 0, b = B[y * P.w + x];
                 mn += Math.min(a, b); mx += Math.max(a, b);
             }
         }
         // italik yalnız temel ailelerde aday; dik yazı çok daha yaygın
-        ranking.push({ ...cand, size, score: (mx ? mn / mx : 0) - (cand.italic ? 0.03 : 0), sy: ih / (mm.actualBoundingBoxAscent + mm.actualBoundingBoxDescent || ih) });
+        return { ...cand, size, score: (mx ? mn / mx : 0) - (cand.italic ? 0.03 : 0), sy: P.h / (mm.actualBoundingBoxAscent + mm.actualBoundingBoxDescent || P.h) };
     };
-    // 1. aşama: her ailenin yalnız normal ve kalını; 2. aşama: en iyi 4 ailenin ara ağırlıkları (500, 600)
-    for (const cand of CANDIDATES) if (!cand.weight || cand.weight === 400 || cand.weight === 700 || FONT_FAMILIES[cand.family].weights.length === 1) score(cand);
-    const top = [...new Set([...ranking].sort((a, b) => b.score - a.score).map((c) => c.family))].slice(0, 4);
-    for (const cand of CANDIDATES) if (top.includes(cand.family)) score(cand);
+    const coarseScale = Math.min(1, 24 / ih);
+    const coarse = [];
+    const PC = prep(coarseScale);
+    const basic = (c) => !c.weight || c.weight === 400 || c.weight === 700 || FONT_FAMILIES[c.family].weights.length === 1;
+    for (const cand of CANDIDATES) if (basic(cand)) { const r = scoreOn(cand, PC); if (r) coarse.push({ cand, score: r.score }); }
+    coarse.sort((a, b) => b.score - a.score);
+    const ranking = [];
+    const PF = prep(1);
+    const fine = new Set(coarse.slice(0, 12).map((q) => q.cand));
+    // en iyi 3 ailenin ara ağırlıkları (500, 600) da ince aşamaya girer
+    const topFamilies = new Set(coarse.slice(0, 3).map((q) => q.cand.family));
+    for (const cand of CANDIDATES) if (!basic(cand) && topFamilies.has(cand.family)) fine.add(cand);
+    for (const cand of fine) {
+        const r = scoreOn(cand, PF);
+        if (r) ranking.push(r);
+    }
     if (!ranking.length) return null;
     ranking.sort((a, b) => b.score - a.score);
     // en iyi 10 aday saklanır: aynı stildeki satırlar ortak font seçerken kullanılır
@@ -161,7 +184,7 @@ function harmonizeFonts(lines) {
     const own = (t) => t.font.ranking[0].score;
     const alnum = (t) => (t.text.match(/[\p{L}\p{N}]/gu) || []).length;
     // canlı metin kararı her satırın kendi en iyi eşleşmesiyle; aynı stildeki satırlarda ortalamayla (hepsi aynı karar)
-    for (const t of lines) t.live = own(t) >= LIVE_TEXT_SCORE && alnum(t) >= 2;
+    for (const t of lines) t.live = own(t) >= LIVE_TEXT_SCORE && alnum(t) >= 2 && t.conf >= LIVE_TEXT_CONF;
     const groups = [];
     for (const t of lines) {
         const h = t.box.h;
@@ -177,7 +200,7 @@ function harmonizeFonts(lines) {
         const winner = [...votes.entries()].sort((a, b) => b[1] - a[1])[0][0];
         const live = g.lines.reduce((sum, t) => sum + own(t), 0) / g.lines.length >= LIVE_TEXT_SCORE;
         // grubun aykırı satırı (ör. harf aralıklı başlık) kendi eşleşmesi zayıfsa görsel kalır; kısa satırlar gruba uyar
-        for (const t of g.lines) t.live = live && (alnum(t) < 6 || own(t) >= LIVE_TEXT_SCORE - 0.1);
+        for (const t of g.lines) t.live = live && t.conf >= LIVE_TEXT_CONF && (alnum(t) < 6 || own(t) >= LIVE_TEXT_SCORE - 0.1);
         for (const t of g.lines) {
             const c = t.font.ranking.find((q) => fontKey(q) === winner);
             // uzun satır kendi eşleşmesinden belirgin kötüyse farklı fonttur (aynı boy ve renkte iki ayrı başlık): dokunma
@@ -187,11 +210,13 @@ function harmonizeFonts(lines) {
 }
 
 /**
- * Font eşleşmesi bu puanın üstündeyse yazı doğrudan canlı metin olur; altındaysa afişin pikselleriyle kalır.
- * 0.8: yeniden yazılan metin özgünüyle neredeyse üst üste biner. Daha düşük puanlarda (0.65-0.8) yazı gözle görülür
- * biçimde kalınlaşıyor/irileşiyordu; aslına sadık kalmak, kendiliğinden düzenlenebilir olmaktan önce gelir.
+ * Yazı doğrudan canlı (düzenlenebilir) metin olur: font eşleşmesi bu puanın üstünde ve OCR okuması güvenilirse.
+ * Sihirli Katmanlar'ın asıl vaadi tıklayıp yazıyı değiştirebilmektir; bu yüzden eşik düşük (0.6) tutulur, aslına dönmek
+ * her canlı yazıda tek tıktır ("Afişteki haline dön"). Süslü/konturlu yazılar (puan < 0.6) afişin pikselleriyle kalır.
  */
-export const LIVE_TEXT_SCORE = 0.8;
+export const LIVE_TEXT_SCORE = 0.6;
+/** Canlı metin için en düşük OCR güveni: yanlış okunmuş yazı canlı metinde göze batar */
+export const LIVE_TEXT_CONF = 0.9;
 
 /**
  * Metin katmanları. Kutu ve koordinatlar canvas pikseli; size piksel.
@@ -204,7 +229,7 @@ export async function extractTexts(canvas, { onProgress, exclude } = {}) {
         onProgress?.(i / boxes.length);
         const b = boxes[i];
         if (exclude?.(b)) continue;
-        const r = await recognize(canvas, b);
+        const r = await timed('  OCR Paddle', () => recognize(canvas, b));
         if (r.conf < 0.85 || !/[\p{L}\p{N}]{2,}|\p{N}/u.test(r.text)) continue;
         // Paylı kesit: kenar pikselleri gerçekten zemin olsun (sıkı kesitte iri yazıda kenar yazıyla dolar, renkler ters çıkar)
         const crop = cropRotated(canvas, { ...b, w: b.w + b.h * 0.3, h: b.h * 1.3 }, Math.round(b.h * 1.3));
@@ -217,10 +242,10 @@ export async function extractTexts(canvas, { onProgress, exclude } = {}) {
         let text = r.text;
         try {
             const big = cropRotated(canvas, { ...b, w: b.w + b.h * 0.4, h: b.h * 1.2 }, 72);
-            const tr = await recognizeLine(big);
+            const tr = await timed('  OCR Tesseract', () => recognizeLine(big));
             if (tr.text) text = mergeDiacritics(text, tr.text);
         } catch { /* Tesseract yoksa Paddle sonucu kalır */ }
-        const font = matchFont(text, crop, tp);
+        const font = await timed('  font eşleştirme', async () => matchFont(text, crop, tp));
         if (!font) continue;
         // Mürekkep izinin merkezi (kesit → görsel koordinatı)
         const icx = (tp.box.x0 + tp.box.x1) / 2 - crop.width / 2, icy = (tp.box.y0 + tp.box.y1) / 2 - crop.height / 2;
@@ -544,10 +569,16 @@ function cutElement(img, W, H, c, mask) {
 // ─── Arka plan onarımı ───────────────────────────────────────────────────────
 
 /** Onarım maskesini bağlı bölgelere ayırıp her birini bağlamıyla doldurur */
+/**
+ * LaMa (yalnız CPU'da çalışır, ~2.7 sn/çağrı) için en küçük delik alanı (görsel alanının oranı); daha küçük delikler
+ * ekran kartındaki MI-GAN ile doldurulur (~0.3 sn). Dolgu çoğu zaman düz/degrade olduğundan (flatFill) fark nadiren görünür.
+ */
+const LAMA_MIN_AREA = 0.05;
+
 async function fillHoles(img, W, H, mask, { best, onProgress }) {
     // Tasarımlar çoğunlukla düz renk ve degradedir (LayerD'nin düz renk varsayımı): çevresi düz/degrade olan delikler
     // çevreye oturtulan düzlemle doldurulur (kesin ve anında); yalnız kalanlar (fotoğraf, iki renk sınırı) sinir ağına gider.
-    mask = flatFill(img, W, H, mask).rest;
+    mask = await timed('  düz dolgu', async () => flatFill(img, W, H, mask).rest);
     const f = 4, sw = Math.ceil(W / f), sh = Math.ceil(H / f);
     const small = new Uint8Array(sw * sh);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (mask[y * W + x]) small[((y / f) | 0) * sw + ((x / f) | 0)] = 1;
@@ -568,7 +599,7 @@ async function fillHoles(img, W, H, mask, { best, onProgress }) {
         regions.push({ x0: x0 * f, y0: y0 * f, x1: Math.min(W, (x1 + 1) * f), y1: Math.min(H, (y1 + 1) * f), area: n * f * f });
     }
     // Büyük delikler tek LaMa geçişinde (WASM'da her geçiş ~18 sn): hepsini kapsayan kesit
-    const bigs = best ? regions.filter((r) => r.area > W * H * 0.015) : [];
+    const bigs = best ? regions.filter((r) => r.area > W * H * LAMA_MIN_AREA) : [];
     if (bigs.length) {
         const u = bigs.reduce((a, r) => ({ x0: Math.min(a.x0, r.x0), y0: Math.min(a.y0, r.y0), x1: Math.max(a.x1, r.x1), y1: Math.max(a.y1, r.y1) }), { x0: W, y0: H, x1: 0, y1: 0 });
         bigs.forEach((r) => { r.done = true; });
@@ -577,7 +608,7 @@ async function fillHoles(img, W, H, mask, { best, onProgress }) {
     for (let k = 0; k < regions.length; k++) {
         const r = regions[k];
         if (r.done) continue;
-        const big = r.area > W * H * 0.015 && best;
+        const big = r.area > W * H * LAMA_MIN_AREA && best;
         const pad = Math.round(Math.max(24, Math.max(r.x1 - r.x0, r.y1 - r.y0) * (big ? 0.5 : 0.35)));
         const x0 = Math.max(0, r.x0 - pad), y0 = Math.max(0, r.y0 - pad), x1 = Math.min(W, r.x1 + pad), y1 = Math.min(H, r.y1 + pad);
         const w = x1 - x0, h = y1 - y0;
@@ -588,8 +619,8 @@ async function fillHoles(img, W, H, mask, { best, onProgress }) {
             for (let x = 0; x < w; x++) m[y * w + x] = mask[(y0 + y) * W + x0 + x] && inRegion(x0 + x, y0 + y) ? 1 : 0;
         }
         onProgress?.(k / regions.length, big ? 'lama' : 'migan');
-        if (big) await inpaintLama(sub, m, w, h);
-        else await inpaintMigan(sub, m, w, h);
+        if (big) await timed('  LaMa', () => inpaintLama(sub, m, w, h));
+        else await timed('  MI-GAN', () => inpaintMigan(sub, m, w, h));
         for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
             if (!m[y * w + x]) continue;
             const si = (y * w + x) * 4, di = ((y0 + y) * W + x0 + x) * 4;
@@ -652,11 +683,21 @@ export async function magicLayers(canvas, { fill = 'best', onProgress, engine } 
  * LayerD akışı: model görselin en üst katmanını (yazılar, şekiller, süsler) alfa olarak verir; bağlı bileşenler öğe olur,
  * altı doldurulur ve kalan görsel için tekrarlanır (en fazla 3 derinlik). Yazılar OCR ile bulunup birebir kesilir.
  */
+/** Son çalıştırmanın aşama süreleri (ms): teşhis ve hız çalışması için */
+export const lastTimings = {};
+async function timed(name, fn) {
+    const t0 = performance.now();
+    try { return await fn(); } finally { lastTimings[name] = (lastTimings[name] || 0) + Math.round(performance.now() - t0); }
+}
+
 async function magicLayersLayerD(canvas, { fill, onProgress }) {
+    for (const k of Object.keys(lastTimings)) delete lastTimings[k];
     const W = canvas.width, H = canvas.height;
     const step = (from, to, stage) => (p) => onProgress?.(from + (to - from) * (p ?? 0), stage);
     onProgress?.(0, 'text');
-    const texts = await extractTexts(canvas, { onProgress: step(0, 0.2, 'text') });
+    // (LayerD'nin ilk turunu yazı okumayla eşzamanlı çalıştırmak denendi: ikisi de aynı ekran kartını paylaştığından
+    // toplam süre 53 → 66-105 sn'ye çıktı; ardışık kalır)
+    const texts = await timed('yazı (OCR + font)', () => extractTexts(canvas, { onProgress: step(0, 0.2, 'text') }));
     const ctx = new OffscreenCanvas(W, H).getContext('2d', { willReadFrequently: true });
     ctx.drawImage(canvas, 0, 0);
     const imgData = ctx.getImageData(0, 0, W, H);
@@ -684,7 +725,7 @@ async function magicLayersLayerD(canvas, { fill, onProgress }) {
         if (dilate) dilateInto(hole, W, H, dilate, mask); else mask.set(hole);
         for (let i = 0; i < W * H; i++) if (mask[i]) filled[i] = 1;
         const before = img.slice();
-        await fillHoles(img, W, H, mask, { best: fill === 'best', onProgress: step(from, to, 'fill') });
+        await timed('doldurma', () => fillHoles(img, W, H, mask, { best: fill === 'best', onProgress: step(from, to, 'fill') }));
         fillAlpha(img, W, H, mask);
         if (depth === 0) textBg = img.slice();
         for (const g of groups) { const e = unblendLayer(before, img, alpha, g, W, H); if (e) elements.push({ ...e, depth }); }
@@ -693,7 +734,7 @@ async function magicLayersLayerD(canvas, { fill, onProgress }) {
     for (; depth < 3; depth++) {
         const from = 0.2 + depth * 0.2;
         onProgress?.(from, 'segment');
-        const alpha = await predictAlpha(current(), 'layerd');
+        const alpha = await timed('LayerD', () => predictAlpha(current(), 'layerd'));
         const groups = layerGroups(alpha, depth === 0 ? textMask : null, W, H);
         if (!groups.length && depth > 0) break;
         await peel(alpha, groups, depth, from + 0.04, from + 0.2);
@@ -712,7 +753,7 @@ async function magicLayersLayerD(canvas, { fill, onProgress }) {
             x.drawImage(current(), 0, 0, G, G);
             return x.getImageData(0, 0, G, G).data;
         };
-        const masks = await segmentEverything(current(), W, H, step(0.6, 0.75, 'segment'));
+        const masks = await timed('SAM 24x24', () => segmentEverything(current(), W, H, step(0.6, 0.75, 'segment'), { skip: textMask }));
         const levels = groupLevels(selectLayerMasks(masks, thumb(), G, { minContrast: 55 }));
         for (let L = 0; L < levels.length; L++) {
             const { alpha, groups } = levelGroups(levels[L], W, H);
@@ -727,7 +768,7 @@ async function magicLayersLayerD(canvas, { fill, onProgress }) {
             return n / m.on;
         };
         // (containerArea 0: hepsi kap sayılır, yalnız kontrast süzgeci uygulanır)
-        const containers = selectLayerMasks((await segmentEverything(current(), W, H, step(0.9, 0.95, 'segment'), { grid: 12, minArea: 0.02, minScore: 0.7, minStab: 0.85 }))
+        const containers = selectLayerMasks((await timed('SAM kaplar 12x12', () => segmentEverything(current(), W, H, step(0.9, 0.95, 'segment'), { grid: 12, minArea: 0.02, minScore: 0.7, minStab: 0.85, skip: textMask })))
             .filter((m) => filledShare(m) < 0.8), thumb(), G, { containerArea: 0 });
         if (containers.length) {
             const { alpha, groups } = levelGroups(containers, W, H);
@@ -756,12 +797,17 @@ async function magicLayersLayerD(canvas, { fill, onProgress }) {
  * SAM 2 base-plus ile otomatik maske üretimi (SAM AMG süzgeçleri): 24×24 ızgara, her noktanın 3 maskesi;
  * güven ≥ 0.8, kararlılık ≥ 0.92, makul alan, görsel kenarına değmeyen (zemin parçası değil); çakışanlardan iyisi kalır.
  */
-async function segmentEverything(canvas, W, H, onProgress, { grid = 24, minArea = 0.0004, minScore = 0.8, minStab = 0.92 } = {}) {
-    const emb = await encodeImage2(canvas, null, 'basePlus');
+async function segmentEverything(canvas, W, H, onProgress, { grid = 24, minArea = 0.0004, minScore = 0.8, minStab = 0.92, skip = null } = {}) {
+    const emb = await timed('  SAM kodlayıcı', () => encodeImage2(canvas, null, 'basePlus'));
     const N = grid, cands = [];
     for (let k = 0; k < N * N; k++) {
         onProgress?.(k / (N * N));
-        const r = await decode2(emb, { points: [{ x: (((k % N) + 0.5) / N) * W, y: ((((k / N) | 0) + 0.5) / N) * H, positive: true }] });
+        const px = (((k % N) + 0.5) / N) * W, py = ((((k / N) | 0) + 0.5) / N) * H;
+        // atlanan noktalar: yazı pikselleri (yazı ayrı işlenir) ve zaten bulunmuş küçük bir nesnenin içi (parçalar katman olmaz)
+        if (skip && skip[Math.min(H - 1, py | 0) * W + Math.min(W - 1, px | 0)]) continue;
+        const gi = Math.min(G - 1, ((py / H) * G) | 0) * G + Math.min(G - 1, ((px / W) * G) | 0);
+        if (cands.some((c) => c.on < G * G * 0.05 && c.bin[gi])) continue;
+        const r = await decode2(emb, { points: [{ x: px, y: py, positive: true }] });
         const S = r.size;
         for (const m of r.masks) {
             let on = 0, hi = 0, lo = 0, x0 = S, y0 = S, x1 = -1, y1 = -1;
