@@ -231,7 +231,7 @@ function ShortcutsDialog({ open, onClose }) {
     const rows = [
         ...TOOLS.map((tl) => [t(tl.label), tl.key]),
         [t('Geri al'), 'Ctrl+Z'], [t('Yinele'), 'Ctrl+Y'], [t('İndir'), 'Ctrl+S'], [t('Bul ve değiştir'), 'Ctrl+F'],
-        [t('Yakınlaştır') + ' / ' + t('Uzaklaştır'), 'Ctrl + / −'], [t('Genişliğe sığdır'), 'Ctrl+0'],
+        [t('Yakınlaştır') + ' / ' + t('Uzaklaştır'), 'Ctrl + / −'], [t('Genişliğe sığdır'), 'Ctrl+0'], [t('Cetveller'), 'Ctrl+R'],
         [t('Çoğalt'), 'Ctrl+D'], ['Kopyala / Yapıştır', 'Ctrl+C / V'], [t('Sil'), 'Del'], ['Taşı', '← ↑ → ↓'], [t('İptal'), 'Esc'],
     ];
     return (

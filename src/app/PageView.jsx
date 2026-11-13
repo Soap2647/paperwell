@@ -13,6 +13,7 @@ import GrabLayer from './layers/GrabLayer';
 import RedactLayer from './layers/RedactLayer';
 import SearchLayer from './layers/SearchLayer';
 import FormLayer from './layers/FormLayer';
+import GuideLayer from './layers/GuideLayer';
 
 function PageView({ page, index, zoom, scrollRoot }) {
     const { state } = useEditor();
@@ -97,6 +98,7 @@ function PageView({ page, index, zoom, scrollRoot }) {
                 {(tool === 'redact' || state.redactions[page.id]?.length > 0) && <RedactLayer {...layerProps} interactive={tool === 'redact'} />}
                 <ObjectLayer {...layerProps} interactive={tool === 'select'} />
                 <FormLayer {...layerProps} interactive={tool === 'select'} />
+                <GuideLayer {...layerProps} interactive={state.rulers && tool === 'select'} />
                 {tool === 'edit' && visible && <EditLayer {...layerProps} />}
                 {tool === 'draw' && <DrawLayer {...layerProps} />}
                 {tool === 'highlight' && <HighlightLayer {...layerProps} />}

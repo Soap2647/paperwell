@@ -8,7 +8,7 @@ const EN = {
     'Renk': 'Color', 'Dolgu': 'Fill', 'Kenarlık': 'Stroke', 'Kalınlık': 'Width', 'Opaklık': 'Opacity', 'Boyut': 'Size', 'Font': 'Font',
     'Yok': 'None', 'Kalın': 'Bold', 'İtalik': 'Italic', 'Hizalama': 'Alignment', 'Çoğalt': 'Duplicate', 'Öne getir': 'Bring forward', 'Geriye gönder': 'Send backward',
     'Konum': 'Position', 'Değiştir': 'Replace', 'Ekle': 'Add', 'Ara': 'Search', 'Sayfa': 'Page', 'sayfa': 'pages', 'Tümü': 'All',
-    'Hızlandırma': 'Acceleration', 'Tarayıcı': 'Browser', 'Metni düzenle': 'Edit text', 'Afişteki haline dön': 'Back to original pixels',
+    'Hızlandırma': 'Acceleration', 'Tarayıcı': 'Browser', 'Metni düzenle': 'Edit text', 'Afişteki haline dön': 'Back to original pixels', 'Önce görselin açısını sıfırlayın': 'Reset the image rotation first',
     'Yazı şu an afişteki haliyle duruyor. Düzenlerseniz şu fontla yeniden yazılır:': 'The text is kept exactly as in the poster. Editing re-types it in:',
     // Karşılama
     'PDF ve görselleriniz için özgür editör': 'The free editor for your PDFs and images',
@@ -35,7 +35,7 @@ const EN = {
     'Belge araçları': 'Document tools', 'Birleştir': 'Merge', 'Böl': 'Split', 'Sıkıştır': 'Compress', 'Filigran': 'Watermark',
     'Sayfa numaraları': 'Page numbers', 'Dışa aktar': 'Export', 'Belge bilgileri': 'Document properties', 'Yeni dosya': 'New file',
     'Klavye kısayolları': 'Keyboard shortcuts', 'Tema': 'Theme', 'Açık': 'Light', 'Koyu': 'Dark', 'Dil': 'Language',
-    'Sayfaya sığdır': 'Fit page', 'Genişliğe sığdır': 'Fit width', 'Yakınlaştır': 'Zoom in', 'Uzaklaştır': 'Zoom out',
+    'Cetveller': 'Rulers', 'Sayfaya sığdır': 'Fit page', 'Genişliğe sığdır': 'Fit width', 'Yakınlaştır': 'Zoom in', 'Uzaklaştır': 'Zoom out',
     'Bul ve değiştir': 'Find & replace', 'Kaydedilmemiş değişiklikler var': 'You have unsaved changes',
     'PNG olarak indir': 'Download as PNG', 'PDF olarak indir': 'Download as PDF', 'İndirildi': 'Downloaded',
     // Sayfalar paneli

@@ -1,6 +1,6 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { download } from '../store/actions';
@@ -93,6 +93,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                     ]}
                 />
                 <IconButton size="sm" icon={ZoomIn} label={t('Yakınlaştır')} shortcut="Ctrl +" onClick={() => setZoom(state.zoom * 1.2)} />
+                <IconButton size="sm" icon={Ruler} label={t('Cetveller')} shortcut="Ctrl+R" active={state.rulers} onClick={() => dispatch({ type: 'SET', values: { rulers: !state.rulers } })} />
             </div>
 
             <div className="flex items-center gap-1 ml-auto md:ml-0">

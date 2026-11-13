@@ -40,6 +40,8 @@ export default function Editor() {
             if (mod && key === '-') { e.preventDefault(); dispatch({ type: 'SET', values: { zoom: Math.max(0.2, s.zoom / 1.2) } }); return; }
             if (mod && key === '0') { e.preventDefault(); window.dispatchEvent(new CustomEvent('paperwell:fit', { detail: 'width' })); return; }
 
+            if (mod && key === 'r') { e.preventDefault(); dispatch({ type: 'SET', values: { rulers: !s.rulers } }); return; }
+
             const sel = s.selected && findObject(s.objects, s.selected.id);
             if (sel) {
                 if (key === 'delete' || key === 'backspace') { e.preventDefault(); dispatch({ type: 'REMOVE_OBJECT', id: sel.obj.id }); return; }

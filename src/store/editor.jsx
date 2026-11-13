@@ -42,6 +42,8 @@ const initialState = {
     search: null, // { query, results: [], index }
     pendingImage: null, // yerleştirilecek görsel/imza dataURL
     grab: null, // Nesne aracı: { pageIndex, points: [{x,y,positive}], mask }
+    rulers: false, // cetvelleri göster
+    guides: {}, // pageId → [{ id, axis: 'x'|'y', pos }] (sayfa birimi, geri alma geçmişine girmez)
     loadId: 0,
 };
 
@@ -62,9 +64,9 @@ function findObject(objects, id) {
 function reducer(s, a) {
     switch (a.type) {
         case 'LOAD':
-            return { ...initialState, opts: s.opts, doc: a.doc, objects: a.objects || {}, zoom: s.zoom, tool: 'select', loadId: Date.now() };
+            return { ...initialState, opts: s.opts, doc: a.doc, objects: a.objects || {}, zoom: s.zoom, rulers: s.rulers, tool: 'select', loadId: Date.now() };
         case 'CLOSE':
-            return { ...initialState, opts: s.opts };
+            return { ...initialState, opts: s.opts, rulers: s.rulers };
         case 'COMMIT': {
             // Belge baytları (ve gerekirse sayfa listesi / nesneler) değişti
             const doc = { ...s.doc, ...a.docChanges, bytes: a.bytes, pages: a.pages || s.doc.pages };
@@ -155,6 +157,16 @@ function reducer(s, a) {
                 dirty: true,
                 page: Math.min(s.page, next.doc.pages.length - 1),
             };
+        }
+        case 'ADD_GUIDE':
+            return { ...s, guides: { ...s.guides, [a.pageId]: [...(s.guides[a.pageId] || []), a.guide] } };
+        case 'MOVE_GUIDE':
+            return { ...s, guides: { ...s.guides, [a.pageId]: (s.guides[a.pageId] || []).map((g) => (g.id === a.id ? { ...g, pos: a.pos } : g)) } };
+        case 'REMOVE_GUIDE':
+            return { ...s, guides: { ...s.guides, [a.pageId]: (s.guides[a.pageId] || []).filter((g) => g.id !== a.id) } };
+        case 'CLEAR_GUIDES': {
+            const { [a.pageId]: _drop, ...rest } = s.guides;
+            return { ...s, guides: rest };
         }
         case 'SET':
             return { ...s, ...a.values };
