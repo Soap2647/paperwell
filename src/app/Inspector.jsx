@@ -325,6 +325,17 @@ function ToolPanel({ tool }) {
             {tool === 'sign' && <SignToolPanel />}
             {tool === 'note' && <Field label={t('Renk')}><ColorPicker value={opts.color} swatches={['#facc15', '#fb923c', '#4ade80', '#60a5fa', '#f472b6', '#c084fc']} onChange={(color) => set({ color })} /></Field>}
             {tool === 'brand' && <BrandPanel />}
+            {tool === 'fix' && (
+                <div className="space-y-3 text-[13px] text-fg-2 leading-relaxed">
+                    <p>{t('Yapay zekâ görselindeki bozuk yeri (logo, yazı, fazlalık) fareyle kutu içine alın. Altında çıkan menüden seçin:')}</p>
+                    <ul className="space-y-1.5 text-xs">
+                        <li><b className="text-fg">{t('Sil')}</b> — {t('bozuk detay silinir, arkası doğal şekilde tamamlanır.')}</li>
+                        <li><b className="text-fg">{t('Yazıyı düzelt')}</b> — {t('yazı okunur, doğrusunu yazarsınız; marka fontuyla yerine gelir.')}</li>
+                        <li><b className="text-fg">{t('Logo koy')}</b> — {t('bozuk logo silinir, marka kitinizdeki logo aynı yere oturur.')}</li>
+                    </ul>
+                    <p className="text-xs text-fg-3">{t('Kutuyu nesnenin biraz dışından çizin; kenarlar zemin olarak kullanılır. Her işlem Ctrl+Z ile geri alınır.')}</p>
+                </div>
+            )}
             {tool === 'erase' && <EraseToolPanel opts={opts} set={set} />}
             {tool === 'grab' && <GrabToolPanel opts={opts} set={set} />}
             {tool === 'redact' && <RedactToolPanel opts={opts} set={set} />}

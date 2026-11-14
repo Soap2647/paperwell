@@ -575,7 +575,7 @@ function cutElement(img, W, H, c, mask) {
  */
 const LAMA_MIN_AREA = 0.05;
 
-async function fillHoles(img, W, H, mask, { best, onProgress }) {
+export async function fillHoles(img, W, H, mask, { best, onProgress }) {
     // Tasarımlar çoğunlukla düz renk ve degradedir (LayerD'nin düz renk varsayımı): çevresi düz/degrade olan delikler
     // çevreye oturtulan düzlemle doldurulur (kesin ve anında); yalnız kalanlar (fotoğraf, iki renk sınırı) sinir ağına gider.
     mask = await timed('  düz dolgu', async () => flatFill(img, W, H, mask).rest);

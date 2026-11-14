@@ -58,6 +58,7 @@ const initialState = {
     search: null, // { query, results: [], index }
     pendingImage: null, // yerleştirilecek görsel/imza dataURL
     grab: null, // Nesne aracı: { pageIndex, points: [{x,y,positive}], mask }
+    fix: null, // Düzelt aracı: { pageIndex, rect: {x,y,w,h}, step: "menu"|"text"|"logo", text, busy }
     rulers: false, // cetvelleri göster
     guides: {}, // pageId → [{ id, axis: 'x'|'y', pos }] (sayfa birimi, geri alma geçmişine girmez)
     loadId: 0,
@@ -96,7 +97,7 @@ function reducer(s, a) {
                 editing: null,
                 selected: a.keepSelection ? s.selected : null,
                 redactions: a.redactions || s.redactions,
-                grab: null,
+                grab: null, fix: null,
                 page: Math.min(s.page, doc.pages.length - 1),
             };
         }
@@ -162,7 +163,7 @@ function reducer(s, a) {
                 future: [snapshot(s), ...s.future].slice(0, MAX_HISTORY),
                 selected: null,
                 editing: null,
-                grab: null,
+                grab: null, fix: null,
                 dirty: true,
                 page: Math.min(s.page, prev.doc.pages.length - 1),
             };
@@ -177,7 +178,7 @@ function reducer(s, a) {
                 future: s.future.slice(1),
                 selected: null,
                 editing: null,
-                grab: null,
+                grab: null, fix: null,
                 dirty: true,
                 page: Math.min(s.page, next.doc.pages.length - 1),
             };
@@ -195,7 +196,7 @@ function reducer(s, a) {
         case 'SET':
             return { ...s, ...a.values };
         case 'SET_TOOL':
-            return { ...s, tool: a.tool, selected: null, editing: null, grab: null, pendingImage: a.pendingImage ?? null };
+            return { ...s, tool: a.tool, selected: null, editing: null, grab: null, fix: null, pendingImage: a.pendingImage ?? null };
         case 'SET_OPTS': {
             const opts = { ...s.opts, [a.tool]: { ...s.opts[a.tool], ...a.changes } };
             try { localStorage.setItem('paperwell.opts', JSON.stringify(opts)); } catch { /* yoksay */ }

@@ -10,6 +10,7 @@ import ShapeLayer from './layers/ShapeLayer';
 import PlaceLayer from './layers/PlaceLayer';
 import EraseLayer from './layers/EraseLayer';
 import GrabLayer from './layers/GrabLayer';
+import FixLayer from './layers/FixLayer';
 import RedactLayer from './layers/RedactLayer';
 import SearchLayer from './layers/SearchLayer';
 import FormLayer from './layers/FormLayer';
@@ -106,6 +107,7 @@ function PageView({ page, index, zoom, scrollRoot }) {
                 {['text', 'image', 'sign', 'note'].includes(tool) && <PlaceLayer {...layerProps} />}
                 {tool === 'erase' && <EraseLayer {...layerProps} />}
                 {tool === 'grab' && <GrabLayer {...layerProps} />}
+                {tool === 'fix' && <FixLayer {...layerProps} />}
             </div>
         </div>
     );
