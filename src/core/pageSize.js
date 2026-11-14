@@ -58,11 +58,11 @@ export function validSize({ w, h, unit }) {
 
 /**
  * Sayfayı eski boyuttan yeniye taşıyan dönüşüm (görünüm uzayı: sol üst orijin, yukarıdan aşağı).
- * fit: içerik sığacak kadar tek tip ölçeklenir; değilse ölçek 1. İkisinde de ortalanır.
- * Nokta (x, y) → (x*k + dx, y*k + dy)
+ * fit: true / 'extend' içerik sığacak kadar tek tip ölçeklenir; 'cover' sayfayı tamamen dolduracak kadar (taşan kısım kırpılır);
+ * false ölçek 1. Hepsinde ortalanır. Nokta (x, y) → (x*k + dx, y*k + dy)
  */
 export function resizeTransform(oldW, oldH, newW, newH, fit = true) {
-    const k = fit ? Math.min(newW / oldW, newH / oldH) : 1;
+    const k = fit === 'cover' ? Math.max(newW / oldW, newH / oldH) : fit ? Math.min(newW / oldW, newH / oldH) : 1;
     return { k, dx: (newW - oldW * k) / 2, dy: (newH - oldH * k) / 2 };
 }
 

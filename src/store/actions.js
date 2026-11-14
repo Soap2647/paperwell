@@ -133,7 +133,9 @@ export async function resizeCurrentPage(ed, { width, height, pixelSize, fit = tr
             ctx.fillStyle = background;
             ctx.fillRect(0, 0, cw, ch);
             ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(src, (dx / width) * cw, (dy / height) * ch, ((old.width * k) / width) * cw, ((old.height * k) / height) * ch);
+            const ix = (dx / width) * cw, iy = (dy / height) * ch, iw = ((old.width * k) / width) * cw, ih = ((old.height * k) / height) * ch;
+            ctx.drawImage(src, ix, iy, iw, ih);
+            if (fit === 'extend') await extendEdges(c, ix, iy, iw, ih);
             const png = s.doc.mime === 'image/png';
             const blob = await new Promise((r) => c.toBlob(r, png ? 'image/png' : 'image/jpeg', 0.95));
             const img = new Uint8Array(await blob.arrayBuffer());
@@ -154,6 +156,22 @@ export async function resizeCurrentPage(ed, { width, height, pixelSize, fit = tr
         ed.dispatch({ type: 'COMMIT', bytes, pages, objects, redactions, docChanges });
         toast(t('Boyut değişti'), 'success');
     });
+}
+
+/** Görselin dışında kalan boşluğu (yeni oranın kenarları) görselin devamıyla doldurur: düz/degrade zemin analitik, kalanı yapay zekâ */
+async function extendEdges(c, ix, iy, iw, ih) {
+    const W = c.width, H = c.height, ctx = c.getContext('2d', { willReadFrequently: true });
+    const img = ctx.getImageData(0, 0, W, H);
+    // görselin kenarındaki 2 px'lik yumuşak geçiş de doldurulsun (dikiş görünmesin)
+    const x0 = Math.ceil(ix) + 2, y0 = Math.ceil(iy) + 2, x1 = Math.floor(ix + iw) - 2, y1 = Math.floor(iy + ih) - 2;
+    const mask = new Uint8Array(W * H);
+    let n = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x < x0 || x >= x1 || y < y0 || y >= y1) { mask[y * W + x] = 1; n++; }
+    if (!n) return;
+    const { fillHoles } = await import('../core/magicLayers');
+    const { isLamaCached } = await import('../core/inpaint/lama');
+    await fillHoles(img.data, W, H, mask, { best: await isLamaCached() });
+    ctx.putImageData(img, 0, 0);
 }
 
 /** Geçerli sayfayı PNG olarak indirir: piksel ön ayarlarında tam piksel boyutunda, diğerlerinde 2 kat (CSS px) */

@@ -2,7 +2,8 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeftRight } from 'lucide-react';
 import { useEditor } from '../../store/editor';
-import { createBlank, resizeCurrentPage } from '../../store/actions';
+import { createBlank, resizeCurrentPage, withBusy } from '../../store/actions';
+import { isMiganCached, loadMigan } from '../../core/inpaint/migan';
 import { PRESET_GROUPS, sizeLabel, sizeToPage, validSize, toPt, fromPt } from '../../core/pageSize';
 import { Button, Dialog, Field, Segmented, cx } from '../../components/ui';
 import { t } from '../../i18n';
@@ -50,14 +51,20 @@ export default function NewDesignDialog({ open, onClose, mode = 'new' }) {
     const [fit, setFit] = useState(true);
     const [c, setC] = useState({ w: '1080', h: '1080', unit: 'px' });
 
+    const isImage = resize && ed.state.doc?.kind === 'image';
     useEffect(() => {
         if (!open) return;
         setLast(loadLast());
         setBg('#FFFFFF');
-        setFit(true);
-    }, [open]);
+        setFit(isImage ? 'extend' : true);
+    }, [open, isImage]);
 
     const go = async (s) => {
+        // kenarları tamamlamak için onarım modeli gerekir (bir kez iner)
+        if (resize && fit === 'extend' && !(await isMiganCached())) {
+            if (!window.confirm(`${t('Kenarları tamamlamak için yapay zekâ modeli indirilecek. Bir kez iner, sonra çevrimdışı çalışır.')} (~28 MB)`)) return;
+            if (!(await withBusy(ed, t('Model indiriliyor'), async (progress) => { await loadMigan((p) => progress(p, `${t('Model indiriliyor')} ${Math.round((p || 0) * 100)}%`)); return true; }))) return;
+        }
         saveLast({ id: s.id, name: s.name, w: s.w, h: s.h, unit: s.unit });
         onClose();
         const page = sizeToPage(s);
@@ -88,10 +95,15 @@ export default function NewDesignDialog({ open, onClose, mode = 'new' }) {
             <div className="space-y-5">
                 {resize && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2" role="radiogroup">
-                        {[
+                        {(isImage ? [
+                            { v: 'extend', title: 'Görseli yeni boyuta yay (önerilen)', desc: 'Görsel olduğu gibi kalır, boş kenarlar görselin devamıyla doldurulur' },
+                            { v: 'cover', title: 'Kırparak doldur', desc: 'Görsel sayfayı tamamen kaplar, taşan kenarları kesilir' },
+                            { v: true, title: 'Sığdır, boşluk renkli kalsın', desc: 'Görsel sığar, kalan yer aşağıda seçtiğiniz renkle dolar' },
+                            { v: false, title: 'Sadece sayfayı değiştir (içerik yerinde kalsın)', desc: 'İçerik aynı boyutta kalır, sayfanın ortasına gelir' },
+                        ] : [
                             { v: true, title: 'İçeriği yeni boyuta sığdır (önerilen)', desc: 'Her şey orantılı küçülür ya da büyür ve ortalanır' },
                             { v: false, title: 'Sadece sayfayı değiştir (içerik yerinde kalsın)', desc: 'İçerik aynı boyutta kalır, sayfanın ortasına gelir' },
-                        ].map((o) => (
+                        ]).map((o) => (
                             <button key={String(o.v)} type="button" role="radio" aria-checked={fit === o.v} onClick={() => setFit(o.v)}
                                 className={cx('text-left rounded-xl border p-3 transition-colors', fit === o.v ? 'border-accent bg-accent-soft' : 'border-line hover:bg-surface-2')}>
                                 <span className="block text-[13px] font-semibold">{t(o.title)}</span>
@@ -101,7 +113,7 @@ export default function NewDesignDialog({ open, onClose, mode = 'new' }) {
                     </div>
                 )}
 
-                <Field label={resize ? t('Boş kalan yerlerin rengi') : t('Sayfa rengi')}>
+                {!(resize && (fit === 'extend' || fit === 'cover')) && <Field label={resize ? t('Boş kalan yerlerin rengi') : t('Sayfa rengi')}>
                     <div className="flex flex-wrap items-center gap-2">
                         {BACKGROUNDS.map((b) => (
                             <button key={b.c} type="button" onClick={() => setBg(b.c)} aria-pressed={bg === b.c}
@@ -117,7 +129,7 @@ export default function NewDesignDialog({ open, onClose, mode = 'new' }) {
                             {t('Başka renk')}
                         </label>
                     </div>
-                </Field>
+                </Field>}
 
                 {last && (
                     <section>

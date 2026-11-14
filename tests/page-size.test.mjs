@@ -27,6 +27,11 @@ check('sığdırma kapalı: k=1, ortalanır (negatif ofset)', near(tr.k, 1) && n
 tr = resizeTransform(595, 842, 1012.5, 810, true);
 check('fit: içerik yeni sayfanın içinde', tr.dx >= -1e-9 && tr.dy >= -1e-9 && 595 * tr.k + tr.dx <= 1012.5 + 1e-9 && 842 * tr.k + tr.dy <= 810 + 1e-9);
 
+tr = resizeTransform(1080, 1080, 1080, 1920, 'cover');
+check('cover: kare -> dikey, sayfa tamamen dolar, yanlar taşar', near(tr.k, 1920 / 1080) && near(tr.dy, 0) && tr.dx < 0 && near(1080 * tr.k + 2 * tr.dx, 1080));
+tr = resizeTransform(1080, 1080, 1080, 1920, 'extend');
+check('extend: fit gibi sığar (boşluk sonra doldurulur)', near(tr.k, 1) && near(tr.dy, 420));
+
 // nesneler
 const k = 2, dx = 10, dy = 20;
 let o = scaleObject({ type: 'rect', x: 1, y: 2, w: 3, h: 4, width: 1.5, stroke: '#000' }, k, dx, dy);
