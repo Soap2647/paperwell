@@ -69,7 +69,42 @@ function measure(name, W, H, sc, box, { maxOver }) {
     check('mürekkep: kalın > 0.13 > ince', sb.stroke > 0.13 && st.stroke < 0.13, `kalın ${sb.stroke.toFixed(3)} ince ${st.stroke.toFixed(3)}`);
     check('mürekkep kutusu', Math.abs(sb.box.y0 - 30) <= 1 && Math.abs(sb.box.y1 - 90) <= 1 && Math.abs(sb.box.x0 - 40) <= 1, JSON.stringify(sb.box));
 }
-// 6) Kutu yalnız zemin: tamamı silinir (kullanıcı ne çizdiyse)
+// 6) Kutuya yandaki nesnenin parçası taşmış: ortadaki nesne silinir, kenara değen parça kalır (gerçek afişte parıltı + yeşil kareler)
+{
+    const W = 200, H = 200;
+    const star = (x, y) => Math.abs(x - 90) ** 0.6 + Math.abs(y - 100) ** 0.6 < 9;
+    const square = (x, y) => x >= 135 && x < 175 && y >= 120 && y < 160; // kutunun sağ kenarı 150: kare kesiliyor
+    const sc = scene(W, H, () => [15, 18, 20], (x, y) => star(x, y) || square(x, y), [240, 240, 200]);
+    const r = smartMask(sc.rgba, W, H, { x0: 40, y0: 50, x1: 150, y1: 150 });
+    let starMissed = 0, squareHit = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+        const i = y * W + x;
+        if (star(x + 0.5, y + 0.5) && !r.mask[i]) starMissed++;
+        if (square(x + 0.5, y + 0.5) && x >= 140 && x < 150 && r.mask[i]) squareHit++;
+    }
+    check('taşan komşu parça silinmez, ortadaki nesne silinir', starMissed === 0 && squareHit === 0, `yıldızda atlanan ${starMissed}, karede silinen ${squareHit}`);
+}
+// 7) Kutu nesneye sıkı çizilmiş (her parça kenara değiyor): hepsi silinir
+{
+    const W = 160, H = 100;
+    const sc = scene(W, H, () => [250, 250, 250], (x, y) => x >= 30 && x < 130 && y >= 30 && y < 70, [20, 90, 200]);
+    const r = smartMask(sc.rgba, W, H, { x0: 31, y0: 28, x1: 129, y1: 72 });
+    let missed = 0;
+    for (let y = 30; y < 70; y++) for (let x = 32; x < 128; x++) if (!r.mask[y * W + x]) missed++;
+    check('sıkı kutu: kenara değen tek nesne yine silinir', missed === 0, `atlanan ${missed}`);
+}
+// 8) Kutu büyük nesneye sıkı çizilmiş, içinde küçük ayrıntı var (dizüstü + ekrandaki kod): ikisi de silinir
+{
+    const W = 220, H = 160;
+    const body = (x, y) => x >= 30 && x < 190 && y >= 30 && y < 130 && !(x >= 50 && x < 170 && y >= 45 && y < 115);
+    const code = (x, y) => x >= 80 && x < 140 && y >= 70 && y < 80;
+    const sc = scene(W, H, () => [10, 12, 14], (x, y) => body(x, y) || code(x, y), [200, 200, 205]);
+    const r = smartMask(sc.rgba, W, H, { x0: 32, y0: 28, x1: 188, y1: 132 });
+    let missed = 0;
+    for (let y = 30; y < 130; y++) for (let x = 34; x < 186; x++) if ((body(x + 0.5, y + 0.5) || code(x + 0.5, y + 0.5)) && !r.mask[y * W + x]) missed++;
+    check('kenara değen büyük nesne ve içindeki ayrıntı birlikte silinir', missed === 0, `atlanan ${missed}`);
+}
+// 9) Kutu yalnız zemin: tamamı silinir (kullanıcı ne çizdiyse)
 {
     const W = 100, H = 100;
     const sc = scene(W, H, () => [200, 200, 200], () => false, [0, 0, 0]);

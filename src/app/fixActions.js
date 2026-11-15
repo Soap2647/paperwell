@@ -104,6 +104,23 @@ const select = (ed, pageIndex, obj) => {
     ed.dispatch({ type: 'SET', values: { selected: { pageId: ed.get().doc.pages[pageIndex].id, id: obj.id } } });
 };
 
+/** Kutu çizilince silinecek alanı önizler (mor): kullanıcı eksik/fazla kırpmayı uygulamadan görür */
+export async function fixPreview(ed, fix) {
+    // fix açıkça verilir: dispatch'ten hemen sonra ed.get() henüz eski durumu döndürür
+    if (!fix || fix.brush) return;
+    try {
+        const prep = await prepare(ed.get(), fix);
+        const a = analyzeRegion(prep.canvas, prep.box, prep.paint);
+        const r = a.region, w = r.x1 - r.x0, h = r.y1 - r.y0;
+        const c = new OffscreenCanvas(w, h), ctx = c.getContext('2d'), img = ctx.createImageData(w, h);
+        for (let i = 0; i < w * h; i++) if (a.mask[i]) { img.data[i * 4] = 124; img.data[i * 4 + 1] = 92; img.data[i * 4 + 2] = 255; img.data[i * 4 + 3] = 150; }
+        ctx.putImageData(img, 0, 0);
+        const src = await canvasToDataUrl(c);
+        if (ed.get().fix?.rect !== fix.rect) return;
+        ed.dispatch({ type: 'SET', values: { fix: { ...ed.get().fix, preview: { src, x: prep.ox + r.x0 * prep.k, y: prep.oy + r.y0 * prep.k, w: w * prep.k, h: h * prep.k, whole: a.whole } } } });
+    } catch { /* önizleme olmazsa da araç çalışır */ }
+}
+
 /** Sil: bölgedeki bozuk detay silinir, arka plan tamamlanır */
 export async function fixErase(ed) {
     const fix = ed.get().fix;

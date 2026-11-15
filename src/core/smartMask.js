@@ -16,7 +16,7 @@ function borderIdx(W, box, t) {
     return out;
 }
 
-/** Basit k-ortalama (renk), en çok k küme; az üyeli kümeler atılır */
+/** Basit k-ortalama (renk), en çok k küme; az üyeli kümeler (kenara taşan komşu nesne, %15 altı) atılır */
 function clusters(rgba, idx, k = 3) {
     const step = Math.max(1, Math.floor(idx.length / 2000));
     const pts = [];
@@ -34,7 +34,7 @@ function clusters(rgba, idx, k = 3) {
     }
     const n = C.map(() => 0), err = C.map(() => 0);
     pts.forEach((p, i) => { n[lab[i]]++; err[lab[i]] += Math.sqrt(dist2(p, C[lab[i]])); });
-    return C.map((c, j) => ({ c, n: n[j], noise: n[j] ? err[j] / n[j] : 0 })).filter((q) => q.n >= pts.length * 0.08);
+    return C.map((c, j) => ({ c, n: n[j], noise: n[j] ? err[j] / n[j] : 0 })).filter((q) => q.n >= pts.length * 0.15);
 }
 
 /** Kenar piksellerine kanal başına düzlem v = a + b·x + c·y (en küçük kareler) */
@@ -77,6 +77,43 @@ export function dilate(src, W, H, r) {
         for (let y = H - 1; y >= 0; y--) { if (row[y * W + x]) last = y; if (last - y <= r) out[y * W + x] = 1; }
     }
     return out;
+}
+
+/**
+ * Kullanıcının kastettiği nesne kutunun içindedir: kutu kenarına değen küçük parçalar (yanındaki başka nesnelerin
+ * kutuya taşan kısımları) silinmez. Kenara değen parça içerideki en büyük parçadan büyükse asıl nesnedir
+ * (kutu ona sıkı çizilmiş) ve silinir. Yakın parçalar (harfler) 2 px köprüyle birleştirilerek değerlendirilir. core yerinde süzülür.
+ */
+function keepInside(core, W, H, box) {
+    const joined = dilate(core, W, H, 2);
+    const lab = new Int32Array(W * H).fill(-1);
+    const touches = [], area = [];
+    const stack = [];
+    for (let y = box.y0; y < box.y1; y++) {
+        for (let x = box.x0; x < box.x1; x++) {
+            const s = y * W + x;
+            if (!joined[s] || lab[s] >= 0) continue;
+            const id = touches.length;
+            let touch = false, n = 0;
+            lab[s] = id; stack.push(s);
+            while (stack.length) {
+                const i = stack.pop(), px = i % W, py = (i / W) | 0;
+                n++;
+                if (px <= box.x0 + 1 || py <= box.y0 + 1 || px >= box.x1 - 2 || py >= box.y1 - 2) touch = true;
+                for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+                    const qx = px + dx, qy = py + dy;
+                    if (qx < box.x0 || qy < box.y0 || qx >= box.x1 || qy >= box.y1) continue;
+                    const q = qy * W + qx;
+                    if (joined[q] && lab[q] < 0) { lab[q] = id; stack.push(q); }
+                }
+            }
+            touches.push(touch); area.push(n);
+        }
+    }
+    if (touches.every(Boolean) || !touches.some(Boolean)) return;
+    const inside = Math.max(...area.filter((_, j) => !touches[j]));
+    const drop = touches.map((tc, j) => tc && area[j] < inside);
+    for (let i = 0; i < W * H; i++) if (core[i] && (lab[i] < 0 || drop[lab[i]])) core[i] = 0;
 }
 
 /**
@@ -141,6 +178,7 @@ export function smartMask(rgba, W, H, box) {
     }
     const frac = n / (bw * bh);
     if (frac < 0.002 || frac > 0.92) return whole();
+    keepInside(core, W, H, box);
     // ön plana bitişik yumuşak kenar pikselleri (eşiğin yarısını geçenler) de silinir: hale kalmasın
     const near = dilate(core, W, H, 2);
     const soft = new Uint8Array(W * H);

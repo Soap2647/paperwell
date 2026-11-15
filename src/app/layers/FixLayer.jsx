@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Eraser, Type, BadgeCheck, X, ArrowLeft, Check, Upload, Loader2, Bold } from 'lucide-react';
 import { useEditor } from '../../store/editor';
 import { eventToPage, capture } from '../objects';
-import { fixErase, fixStartText, fixApplyText, fixApplyLogo, clearFix, setFixStep } from '../fixActions';
+import { fixErase, fixStartText, fixApplyText, fixApplyLogo, clearFix, setFixStep, fixPreview } from '../fixActions';
 import { useBrandKit, addBrandAsset } from '../../core/brandKit';
 import { Button, cx } from '../../components/ui';
 import FontPicker from '../FontPicker';
@@ -107,7 +107,11 @@ export default function FixLayer({ page, index, zoom }) {
         r.w = Math.min(page.width, Math.max(d.a[0], d.b[0])) - r.x;
         r.h = Math.min(page.height, Math.max(d.a[1], d.b[1])) - r.y;
         setD(null);
-        if (r.w > 4 && r.h > 4) ed.dispatch({ type: 'SET', values: { fix: { pageIndex: index, rect: r, step: 'menu' } } });
+        if (r.w > 4 && r.h > 4) {
+            const next = { pageIndex: index, rect: r, step: 'menu' };
+            ed.dispatch({ type: 'SET', values: { fix: next } });
+            fixPreview(ed, next);
+        }
         else clearFix(ed);
     };
 
@@ -121,6 +125,10 @@ export default function FixLayer({ page, index, zoom }) {
                     left: cursor[0] - size / 2, top: cursor[1] - size / 2, width: size, height: size,
                     border: `${1.5 / zoom}px solid #fff`, boxShadow: `0 0 0 ${1 / zoom}px rgba(0,0,0,.6)`, background: 'rgba(124,92,255,.18)',
                 }} />
+            )}
+            {fix?.preview && !d && fix.step !== 'all' && (
+                <img src={fix.preview.src} alt="" className="absolute pointer-events-none" draggable={false}
+                    style={{ left: fix.preview.x, top: fix.preview.y, width: fix.preview.w, height: fix.preview.h, imageRendering: 'pixelated' }} />
             )}
             {preview && (
                 <div className="absolute pointer-events-none" style={{
