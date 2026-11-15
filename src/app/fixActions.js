@@ -39,6 +39,16 @@ function imageUnder(s, pageIndex, rect) {
     return null;
 }
 
+/** Fırça modunda boyanan alanı raster pikseline taşır: paint(x, y) */
+function withPaint(fix, prep) {
+    const b = fix.brush;
+    if (b) prep.paint = (x, y) => {
+        const px = Math.round((prep.ox + x * prep.k) * b.scale), py = Math.round((prep.oy + y * prep.k) * b.scale);
+        return px >= 0 && py >= 0 && px < b.w && py < b.h && b.data[py * b.w + px] === 1;
+    };
+    return prep;
+}
+
 /** Düzeltilecek raster: canvas + kutunun piksel karşılığı + piksel → sayfa birimi dönüşümü */
 async function prepare(s, fix) {
     const { pageIndex, rect } = fix;
@@ -47,7 +57,7 @@ async function prepare(s, fix) {
         const canvas = await loadImageCanvas(obj.src);
         const sx = canvas.width / obj.w, sy = canvas.height / obj.h;
         const box = { x0: Math.max(0, (rect.x - obj.x) * sx), y0: Math.max(0, (rect.y - obj.y) * sy), x1: Math.min(canvas.width, (rect.x + rect.w - obj.x) * sx), y1: Math.min(canvas.height, (rect.y + rect.h - obj.y) * sy) };
-        return { kind: 'object', obj, canvas, box, k: 1 / sx, ox: obj.x, oy: obj.y };
+        return withPaint(fix, { kind: 'object', obj, canvas, box, k: 1 / sx, ox: obj.x, oy: obj.y });
     }
     const page = s.doc.pages[pageIndex];
     // bağlam payı: onarım çevreye bakar
@@ -59,7 +69,7 @@ async function prepare(s, fix) {
     const scale = s.doc.kind === 'image' ? (s.doc.imageSize?.w || page.width) / page.width : Math.max(1, Math.min(3, Math.sqrt(1.5e6 / (region.w * region.h))));
     const canvas = await renderRegion(s.doc.bytes, pageIndex, region, scale);
     const box = { x0: (rect.x - region.x) * scale, y0: (rect.y - region.y) * scale, x1: (rect.x + rect.w - region.x) * scale, y1: (rect.y + rect.h - region.y) * scale };
-    return { kind: 'page', region, scale, canvas, box, k: 1 / scale, ox: region.x, oy: region.y };
+    return withPaint(fix, { kind: 'page', region, scale, canvas, box, k: 1 / scale, ox: region.x, oy: region.y });
 }
 
 /** Onarılmış raster'ı belgeye yazar; extra: üstüne eklenecek nesneler. Tek geri alma adımı */
@@ -91,7 +101,7 @@ export async function fixErase(ed) {
     if (!fix || !(await ensureModels(ed, false))) return;
     await withBusy(ed, t('Siliniyor...'), async () => {
         const prep = await prepare(ed.get(), fix);
-        const erased = await eraseRegion(prep.canvas, prep.box);
+        const erased = await eraseRegion(prep.canvas, prep.box, { a: analyzeRegion(prep.canvas, prep.box, prep.paint) });
         await commit(ed, fix, prep, erased);
         toast(t('Silindi. Beğenmezseniz Ctrl+Z.'), 'success', 3000);
     });
@@ -147,7 +157,7 @@ export async function fixApplyText(ed, text) {
     await withBusy(ed, t('Yazı düzeltiliyor...'), async () => {
         const s = ed.get();
         const prep = await prepare(s, fix);
-        const a = analyzeRegion(prep.canvas, prep.box);
+        const a = analyzeRegion(prep.canvas, prep.box, prep.paint);
         const st = a.whole ? null : inkStats(a.core, a.region.x1 - a.region.x0, a.region.y1 - a.region.y0);
         const ink = st && { x: prep.ox + (a.region.x0 + st.box.x0) * prep.k, y: prep.oy + (a.region.y0 + st.box.y0) * prep.k, w: (st.box.x1 - st.box.x0) * prep.k, h: (st.box.y1 - st.box.y0) * prep.k };
         const erased = await eraseRegion(prep.canvas, prep.box, { a });
@@ -172,7 +182,7 @@ export async function fixApplyLogo(ed, asset) {
     if (!fix || !(await ensureModels(ed, false))) return;
     await withBusy(ed, t('Logo yerleştiriliyor...'), async () => {
         const prep = await prepare(ed.get(), fix);
-        const erased = await eraseRegion(prep.canvas, prep.box);
+        const erased = await eraseRegion(prep.canvas, prep.box, { a: analyzeRegion(prep.canvas, prep.box, prep.paint) });
         const r = fix.rect, k = Math.min(r.w / asset.w, r.h / asset.h) * 0.92;
         const w = asset.w * k, h = asset.h * k;
         const obj = { id: newId('ob'), type: 'image', x: r.x + (r.w - w) / 2, y: r.y + (r.h - h) / 2, w, h, src: asset.src, opacity: 1, name: asset.name };

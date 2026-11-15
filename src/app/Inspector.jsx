@@ -380,7 +380,11 @@ function ToolPanel({ tool }) {
             {tool === 'brand' && <BrandPanel />}
             {tool === 'fix' && (
                 <div className="space-y-3 text-[13px] text-fg-2 leading-relaxed">
-                    <p>{t('Yapay zekâ görselindeki bozuk yeri (logo, yazı, fazlalık) fareyle kutu içine alın. Altında çıkan menüden seçin:')}</p>
+                    <Segmented value={opts.mode} onChange={(mode) => set({ mode })} options={[{ value: 'box', label: t('Kutu') }, { value: 'brush', label: t('Fırça') }]} />
+                    {opts.mode === 'brush' && <Slider label={t('Fırça boyutu')} value={opts.size} min={4} max={120} step={1} unit=" pt" onChange={(size) => set({ size })} />}
+                    <p>{opts.mode === 'brush'
+                        ? t('Bozuk yerin üstünü fırçayla boyayın (Shift: boyamaya ekle). Çapraz ya da kıvrık detaylarda kutudan daha az yer silinir. Bırakınca menü çıkar:')
+                        : t('Yapay zekâ görselindeki bozuk yeri (logo, yazı, fazlalık) fareyle kutu içine alın. Altında çıkan menüden seçin:')}</p>
                     <ul className="space-y-1.5 text-xs">
                         <li><b className="text-fg">{t('Sil')}</b> — {t('bozuk detay silinir, arkası doğal şekilde tamamlanır.')}</li>
                         <li><b className="text-fg">{t('Yazıyı düzelt')}</b> — {t('yazı okunur, doğrusunu yazarsınız; marka fontuyla yerine gelir.')}</li>

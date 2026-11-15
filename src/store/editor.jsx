@@ -34,6 +34,7 @@ export const DEFAULT_OPTS = {
     text: { family: 'googlesans', size: 14, color: '#111827', bold: false, italic: false, align: 'left' },
     erase: { size: 28, mode: 'fast' },
     grab: { fill: 'ai' },
+    fix: { mode: 'box', size: 32 },
     redact: { fill: 'black' },
     note: { color: '#facc15' },
 };

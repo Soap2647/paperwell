@@ -8,12 +8,60 @@ import { Button } from '../../components/ui';
 import { toast } from '../../components/Toaster';
 import { t } from '../../i18n';
 
-// Düzelt aracı: bozuk bölgeyi kutula, altında çıkan menüden ne yapılacağını seç
+const MASK_SCALE = 2; // fırça maskesi: sayfa birimi başına piksel
+
+// Düzelt aracı: bozuk bölgeyi kutula ya da fırçayla boya, altında çıkan menüden ne yapılacağını seç
 export default function FixLayer({ page, index, zoom }) {
     const ed = useEditor();
     const fix = ed.state.fix?.pageIndex === index ? ed.state.fix : null;
+    const { mode, size } = ed.state.opts.fix;
+    const brush = mode === 'brush';
     const ref = useRef(null);
+    const maskRef = useRef(null);
+    const paintRef = useRef(null); // { last: [x, y], x0, y0, x1, y1 }
     const [d, setD] = useState(null);
+    const [cursor, setCursor] = useState(null);
+    const [painting, setPainting] = useState(false);
+
+    // fırça maskesi sayfa boyutunda; düzeltme bitince (fix temizlenince) silinir
+    useEffect(() => {
+        const c = maskRef.current;
+        if (!c) return;
+        c.width = Math.round(page.width * MASK_SCALE);
+        c.height = Math.round(page.height * MASK_SCALE);
+    }, [page.width, page.height, brush]);
+    useEffect(() => {
+        if (!fix?.brush && maskRef.current && !paintRef.current) maskRef.current.getContext('2d').clearRect(0, 0, maskRef.current.width, maskRef.current.height);
+    }, [fix]);
+
+    const paint = (from, to) => {
+        const ctx = maskRef.current.getContext('2d');
+        ctx.strokeStyle = '#7c5cff';
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = size * MASK_SCALE;
+        ctx.beginPath();
+        ctx.moveTo(from[0] * MASK_SCALE, from[1] * MASK_SCALE);
+        ctx.lineTo(to[0] * MASK_SCALE + 0.01, to[1] * MASK_SCALE);
+        ctx.stroke();
+        const p = paintRef.current, r = size / 2;
+        p.x0 = Math.min(p.x0, to[0] - r); p.y0 = Math.min(p.y0, to[1] - r); p.x1 = Math.max(p.x1, to[0] + r); p.y1 = Math.max(p.y1, to[1] + r);
+        p.last = to;
+    };
+    const brushUp = () => {
+        const p = paintRef.current;
+        paintRef.current = null;
+        setPainting(false);
+        if (!p) return;
+        const c = maskRef.current;
+        const px = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, c.width, c.height).data;
+        const data = new Uint8Array(c.width * c.height);
+        for (let i = 0; i < data.length; i++) if (px[i * 4 + 3] > 10) data[i] = 1;
+        const r = { x: Math.max(0, p.x0), y: Math.max(0, p.y0) };
+        r.w = Math.min(page.width, p.x1) - r.x;
+        r.h = Math.min(page.height, p.y1) - r.y;
+        ed.dispatch({ type: 'SET', values: { fix: { pageIndex: index, rect: r, step: 'menu', brush: { data, w: c.width, h: c.height, scale: MASK_SCALE } } } });
+    };
 
     // Esc: kutuyu kaldır; Delete: doğrudan sil
     useEffect(() => {
@@ -34,10 +82,25 @@ export default function FixLayer({ page, index, zoom }) {
         window.getSelection()?.removeAllRanges();
         capture(e);
         const p = eventToPage(e, ref.current, zoom);
+        if (brush) {
+            // yeni boyama: önceki seçim kalkar; Shift ile önceki boyamaya eklenir
+            if (!e.shiftKey || !fix?.brush) maskRef.current.getContext('2d').clearRect(0, 0, maskRef.current.width, maskRef.current.height);
+            const prev = e.shiftKey && fix?.brush ? fix.rect : null;
+            paintRef.current = prev ? { x0: prev.x, y0: prev.y, x1: prev.x + prev.w, y1: prev.y + prev.h } : { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+            if (fix) clearFix(ed);
+            setPainting(true);
+            paint(p, p);
+            return;
+        }
         setD({ a: p, b: p });
     };
-    const move = (e) => d && setD({ ...d, b: eventToPage(e, ref.current, zoom) });
+    const move = (e) => {
+        const p = eventToPage(e, ref.current, zoom);
+        if (brush) { setCursor(p); if (paintRef.current) paint(paintRef.current.last, p); return; }
+        if (d) setD({ ...d, b: p });
+    };
     const up = () => {
+        if (brush) { brushUp(); return; }
         if (!d) return;
         const r = { x: Math.max(0, Math.min(d.a[0], d.b[0])), y: Math.max(0, Math.min(d.a[1], d.b[1])) };
         r.w = Math.min(page.width, Math.max(d.a[0], d.b[0])) - r.x;
@@ -47,17 +110,24 @@ export default function FixLayer({ page, index, zoom }) {
         else clearFix(ed);
     };
 
-    const preview = d ? { x: Math.min(d.a[0], d.b[0]), y: Math.min(d.a[1], d.b[1]), w: Math.abs(d.b[0] - d.a[0]), h: Math.abs(d.b[1] - d.a[1]) } : fix?.rect;
+    const preview = d ? { x: Math.min(d.a[0], d.b[0]), y: Math.min(d.a[1], d.b[1]), w: Math.abs(d.b[0] - d.a[0]), h: Math.abs(d.b[1] - d.a[1]) } : fix?.brush ? null : fix?.rect;
 
     return (
-        <div ref={ref} className="absolute inset-0 touch-none" style={{ cursor: 'crosshair' }} onPointerDown={down} onPointerMove={move} onPointerUp={up}>
+        <div ref={ref} className="absolute inset-0 touch-none" style={{ cursor: brush ? 'none' : 'crosshair' }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => setCursor(null)}>
+            {brush && <canvas ref={maskRef} className="absolute inset-0 w-full h-full pointer-events-none" style={{ opacity: 0.45 }} />}
+            {brush && cursor && (
+                <div className="absolute rounded-full pointer-events-none" style={{
+                    left: cursor[0] - size / 2, top: cursor[1] - size / 2, width: size, height: size,
+                    border: `${1.5 / zoom}px solid #fff`, boxShadow: `0 0 0 ${1 / zoom}px rgba(0,0,0,.6)`, background: 'rgba(124,92,255,.18)',
+                }} />
+            )}
             {preview && (
                 <div className="absolute pointer-events-none" style={{
                     left: preview.x, top: preview.y, width: preview.w, height: preview.h,
                     outline: `${2 / zoom}px dashed #7c5cff`, background: 'rgba(124,92,255,.10)', boxShadow: `0 0 0 ${1 / zoom}px rgba(255,255,255,.8)`,
                 }} />
             )}
-            {fix && !d && <FixBar fix={fix} page={page} zoom={zoom} />}
+            {fix && !d && !painting && <FixBar fix={fix} page={page} zoom={zoom} />}
         </div>
     );
 }
