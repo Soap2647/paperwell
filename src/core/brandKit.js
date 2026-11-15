@@ -2,7 +2,7 @@
 // Logolar IndexedDB'de (büyük olabilir), renkler localStorage'da saklanır; ikisi de yoksa oturum boyunca bellekte tutulur.
 import { useSyncExternalStore } from 'react';
 
-const DB = 'paperwell-brand', STORE = 'assets', COLORS_KEY = 'paperwell.brand.colors';
+const DB = 'paperwell-brand', STORE = 'assets', TEMPLATES = 'templates', COLORS_KEY = 'paperwell.brand.colors';
 export const MAX_ASSET_BYTES = 8e6;
 
 /** Varsayılan renkler: Google / GDG marka renkleri + koyu ve beyaz */
@@ -11,7 +11,7 @@ export const DEFAULT_COLORS = [
     { name: 'Koyu', hex: '#202124' }, { name: 'Beyaz', hex: '#FFFFFF' },
 ];
 
-let state = { assets: [], colors: DEFAULT_COLORS, ready: false };
+let state = { assets: [], colors: DEFAULT_COLORS, templates: [], ready: false };
 const listeners = new Set();
 const emit = (next) => { state = { ...state, ...next }; listeners.forEach((fn) => fn()); };
 export const subscribeBrand = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
@@ -23,17 +23,19 @@ export const useBrandKit = () => useSyncExternalStore(subscribeBrand, getBrand);
 function open() {
     return new Promise((resolve, reject) => {
         if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB yok'));
-        const req = indexedDB.open(DB, 1);
-        req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' });
+        const req = indexedDB.open(DB, 2);
+        req.onupgradeneeded = () => {
+            for (const name of [STORE, TEMPLATES]) if (!req.result.objectStoreNames.contains(name)) req.result.createObjectStore(name, { keyPath: 'id' });
+        };
         req.onsuccess = () => resolve(req.result);
         req.onerror = () => reject(req.error);
     });
 }
-const run = async (mode, fn) => {
+const run = async (mode, fn, store = STORE) => {
     const db = await open();
     try {
         return await new Promise((resolve, reject) => {
-            const tx = db.transaction(STORE, mode), out = fn(tx.objectStore(STORE));
+            const tx = db.transaction(store, mode), out = fn(tx.objectStore(store));
             tx.oncomplete = () => resolve(out?.result);
             tx.onerror = () => reject(tx.error);
         });
@@ -64,7 +66,8 @@ export function loadBrandKit() {
             try {
                 navigator.storage?.persist?.();
                 const assets = await run('readonly', (s) => s.getAll());
-                emit({ assets: (assets || []).sort((a, b) => a.added - b.added), ready: true });
+                const templates = await run('readonly', (s) => s.getAll(), TEMPLATES);
+                emit({ assets: (assets || []).sort((a, b) => a.added - b.added), templates: (templates || []).sort((a, b) => a.added - b.added), ready: true });
             } catch { persistent = false; emit({ ready: true }); }
         })();
     }
@@ -101,6 +104,22 @@ export async function renameBrandAsset(id, name) {
     const next = { ...a, name: name.trim() };
     try { await run('readwrite', (s) => s.put(next)); } catch { /* yoksay */ }
     emit({ assets: state.assets.map((q) => (q.id === id ? next : q)) });
+}
+
+// ─── Şablonlar ───────────────────────────────────────────────────────────────
+// Bir sayfadaki yerleşim (logolar, yazılar, şekiller) kaydedilir; yeni görsele tek tıkla aynı yerlere gelir.
+
+/** @param {{name: string, width: number, height: number, objects: object[], thumb?: string}} t */
+export async function saveTemplate({ name, width, height, objects, thumb }) {
+    const tpl = { id: `tp-${Date.now().toString(36)}`, name, width, height, objects, thumb, added: Date.now() };
+    try { await run('readwrite', (s) => s.put(tpl), TEMPLATES); } catch { persistent = false; }
+    emit({ templates: [...state.templates, tpl] });
+    return tpl;
+}
+
+export async function removeTemplate(id) {
+    try { await run('readwrite', (s) => s.delete(id), TEMPLATES); } catch { /* yoksay */ }
+    emit({ templates: state.templates.filter((q) => q.id !== id) });
 }
 
 // ─── Renkler ─────────────────────────────────────────────────────────────────

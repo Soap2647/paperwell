@@ -140,6 +140,7 @@ export default function ObjectLayer({ page, zoom, interactive, objects }) {
                     key={o.id}
                     o={o}
                     z={i + 1}
+                    measure={!objects}
                     editing={editingId === o.id}
                     interactive={interactive}
                     onPointerDown={(e) => startDrag(e, o)}
@@ -250,14 +251,15 @@ export function ShapeSvg({ o, hit }) {
     }
 }
 
-function TextObject({ o, z, editing, interactive, onPointerDown, onDoubleClick }) {
+function TextObject({ o, z, editing, interactive, onPointerDown, onDoubleClick, measure }) {
     const { dispatch } = useEditor();
     const ref = useRef(null);
 
     // Gerçek boyutu ölç (seçim kutusu ve dışa aktarım hizalaması için)
+    // ölçüyü yalnız asıl sayfa yazar: küçük resim gecikmeli kopyayı çizer, ölçü gönderirse kopya yetişene kadar döngüye girer
     useLayoutEffect(() => {
         const el = ref.current;
-        if (!el) return;
+        if (!el || !measure) return;
         const w = el.offsetWidth, h = el.offsetHeight;
         if (Math.abs(w - (o.w || 0)) > 0.5 || Math.abs(h - (o.h || 0)) > 0.5) {
             dispatch({ type: 'UPDATE_OBJECT', id: o.id, changes: { w, h }, transient: true });

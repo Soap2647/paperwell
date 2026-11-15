@@ -1,14 +1,19 @@
 // Marka kiti paneli: logolar, marka renkleri ve varsayılan yazı tipi. Bir kez eklenir, her açılışta hazır durur.
-import { useRef } from 'react';
-import { Plus, Trash2, Download, Upload } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Plus, Trash2, Download, Upload, LayoutTemplate } from 'lucide-react';
 import { useEditor, findObject } from '../store/editor';
 import { newId } from '../core/pageOps';
-import { addBrandAsset, removeBrandAsset, addBrandColor, removeBrandColor, exportBrandKit, importBrandKit, isBrandPersistent, useBrandKit } from '../core/brandKit';
+import { addBrandAsset, removeBrandAsset, addBrandColor, removeBrandColor, exportBrandKit, importBrandKit, isBrandPersistent, useBrandKit, saveTemplate, removeTemplate } from '../core/brandKit';
+import { resizeTransform, scaleObjects } from '../core/pageSize';
 import { saveFile } from '../platform';
 import { Button, Field, cx } from '../components/ui';
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import FontPicker from './FontPicker';
+
+/** Şablona girecek nesneler: sayfayı kaplayan büyük görseller (ana görsel) ve notlar/vurgular hariç */
+const templateObjects = (list, page) => (list || []).filter((o) => !['note', 'highlight'].includes(o.type)
+    && !(o.type === 'image' && o.w * o.h > page.width * page.height * 0.6));
 
 const colorKey = (o) => (['text', 'path', 'highlight', 'note'].includes(o.type) ? 'color' : o.type === 'rect' || o.type === 'ellipse' ? 'fill' : o.type === 'line' || o.type === 'arrow' ? 'stroke' : null);
 
@@ -37,6 +42,28 @@ export default function BrandPanel() {
         if (!key) { toast(t('Önce sayfada bir yazı ya da şekil seçin; rengi ona uygularız'), 'info', 4000); return; }
         dispatch({ type: 'UPDATE_OBJECT', id: sel.id, changes: { [key]: hex } });
     };
+    // Şablon: bu sayfadaki yerleşimi kaydet / başka sayfaya uygula (sayfa boyutu farklıysa orantılı sığdırılır)
+    const [tplName, setTplName] = useState('');
+    const pageObjs = templateObjects(state.objects[page.id], page);
+    const saveTpl = async () => {
+        const name = tplName.trim() || `${t('Şablon')} ${kit.templates.length + 1}`;
+        await saveTemplate({ name, width: page.width, height: page.height, objects: pageObjs });
+        setTplName('');
+        toast(`${name} ${t('kaydedildi')}`, 'success', 3000);
+    };
+    const applyTpl = (tpl) => {
+        const { k, dx, dy } = resizeTransform(tpl.width, tpl.height, page.width, page.height, true);
+        const gids = new Map();
+        const objs = scaleObjects(tpl.objects, k, dx, dy).map((o) => {
+            const q = { ...o, id: newId('ob') };
+            if (o.groupId) { if (!gids.has(o.groupId)) gids.set(o.groupId, newId('gp')); q.groupId = gids.get(o.groupId); }
+            return q;
+        });
+        dispatch({ type: 'COMMIT', bytes: state.doc.bytes, objects: { ...state.objects, [page.id]: [...(state.objects[page.id] || []), ...objs] } });
+        dispatch({ type: 'SET_TOOL', tool: 'select' });
+        toast(`${tpl.name} ${t('uygulandı')} (${objs.length})`, 'success', 3000);
+    };
+
     const exportKit = async () => { await saveFile(new Blob([exportBrandKit()], { type: 'application/json' }), 'marka-kiti.paperwell-brand.json'); };
     const importKit = async (file) => {
         try {
@@ -93,6 +120,27 @@ export default function BrandPanel() {
 
             <Field label={t('Yeni yazılar için yazı tipi')} hint={t('Metin aracıyla yazdığınız her yeni yazı bu fontla başlar.')}>
                 <FontPicker value={state.opts.text.family} onChange={(family) => dispatch({ type: 'SET_OPTS', tool: 'text', changes: { family } })} />
+            </Field>
+
+            <Field label={t('Şablonlarım')} hint={t('Logo ve yazıları bir kez yerleştirin, şablon yapın; yeni görsele tek tıkla aynı yerlere gelir.')}>
+                <div className="space-y-1.5">
+                    {kit.templates.map((tpl) => (
+                        <div key={tpl.id} className="group flex items-center gap-2 rounded-lg border border-line p-1.5 hover:border-accent">
+                            <button type="button" className="flex-1 min-w-0 flex items-center gap-2 text-left" onClick={() => applyTpl(tpl)} title={t('Bu sayfaya uygula')}>
+                                <LayoutTemplate className="w-4 h-4 text-accent shrink-0" />
+                                <span className="truncate text-[13px] font-medium">{tpl.name}</span>
+                                <span className="text-[11px] text-fg-3 shrink-0">{tpl.objects.length} {t('öğe')}</span>
+                            </button>
+                            <button type="button" aria-label={t('Sil')} onClick={() => { if (window.confirm(`${tpl.name} ${t('silinsin mi?')}`)) removeTemplate(tpl.id); }}
+                                className="w-6 h-6 rounded-md hidden group-hover:flex items-center justify-center text-fg-3 hover:text-danger"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                    ))}
+                </div>
+                <div className="flex gap-1.5">
+                    <input value={tplName} onChange={(e) => setTplName(e.target.value)} placeholder={`${t('Şablon')} ${kit.templates.length + 1}`}
+                        className="flex-1 min-w-0 h-8 rounded-lg border border-line bg-surface-2 px-2.5 text-[13px] focus:outline-none focus:border-accent" />
+                    <Button size="sm" icon={Plus} disabled={!pageObjs.length} onClick={saveTpl} title={pageObjs.length ? '' : t('Önce sayfaya logo ya da yazı ekleyin')}>{t('Bu sayfadan')}</Button>
+                </div>
             </Field>
 
             <Field label={t('Kiti paylaş')} hint={t('Ekibinizle aynı logo ve renkleri kullanmak için kiti dosyaya aktarın, diğer bilgisayarda içe aktarın.')}>
