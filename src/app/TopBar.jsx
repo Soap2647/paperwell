@@ -1,6 +1,6 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, FileImage, FileText,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { download, exportPng } from '../store/actions';
@@ -41,6 +41,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
         { label: t('Sihirli Katmanlar'), icon: Layers, onClick: () => runMagicLayers(ed) },
         { label: t('Belge tarayıcı'), icon: ScanLine, onClick: () => open('scan') },
         { label: t('Boyutu değiştir…'), icon: Scaling, onClick: () => open('resize') },
+        { label: t('Sosyal medyaya hazırla…'), icon: Share2, onClick: () => open('social') },
         { label: t('Arka planı kaldır'), icon: ImageMinus, onClick: () => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: null } }), disabled: !isImage },
         '-',
         { label: t('Dışa aktar'), icon: FileOutput, onClick: () => open('export') },
