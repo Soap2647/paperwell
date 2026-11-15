@@ -19,7 +19,11 @@ import GuideLayer from './layers/GuideLayer';
 function PageView({ page, index, zoom, scrollRoot }) {
     const { state } = useEditor();
     const { tool, doc } = state;
-    const bytes = doc.bytes;
+    // önce/sonra: basılı tutulurken sayfanın açılıştaki hali gösterilir (nesneler gizlenir)
+    const origIndex = state.compare && state.original ? state.original.pages.findIndex((p) => p.id === page.id) : -1;
+    const orig = origIndex >= 0 ? state.original.pages[origIndex] : null;
+    const bytes = orig ? state.original.bytes : doc.bytes;
+    const pageNo = orig ? origIndex + 1 : index + 1;
     const holderRef = useRef(null);
     const canvasRef = useRef(null);
     const [visible, setVisible] = useState(index < 3);
@@ -47,14 +51,18 @@ function PageView({ page, index, zoom, scrollRoot }) {
             try {
                 const pdf = await getPdfjsDoc(bytes);
                 if (cancelled) return;
-                const p = await pdf.getPage(index + 1);
-                const viewport = p.getViewport({ scale });
+                const p = await pdf.getPage(pageNo);
+                // eski hal başka boyuttaysa (ör. boyut değişti) bugünkü sayfanın içine sığdırılıp ortalanır
+                const vp0 = p.getViewport({ scale: 1 });
+                const fit = orig ? Math.min(page.width / vp0.width, page.height / vp0.height) : 1;
+                const viewport = p.getViewport({ scale: scale * fit });
                 const off = document.createElement('canvas');
-                off.width = Math.round(viewport.width);
-                off.height = Math.round(viewport.height);
+                off.width = Math.round(orig ? page.width * scale : viewport.width);
+                off.height = Math.round(orig ? page.height * scale : viewport.height);
                 const ctx = off.getContext('2d');
-                ctx.fillStyle = '#fff';
+                ctx.fillStyle = orig ? '#e5e7eb' : '#fff';
                 ctx.fillRect(0, 0, off.width, off.height);
+                if (orig) ctx.translate((off.width - viewport.width) / 2, (off.height - viewport.height) / 2);
                 // ENABLE_FORMS: form alanlarının görünümü çizilmez, yerlerine FormLayer girişleri gelir
                 task = p.render({ canvasContext: ctx, viewport, annotationMode: 2 });
                 await task.promise;
@@ -64,7 +72,7 @@ function PageView({ page, index, zoom, scrollRoot }) {
                 c.height = off.height;
                 c.getContext('2d').drawImage(off, 0, 0);
                 renderedKey.current = key;
-                pageCanvases.set(index, { canvas: c, scale });
+                if (!orig) pageCanvases.set(index, { canvas: c, scale });
                 setRendered(true);
             } catch (e) {
                 if (e?.name !== 'RenderingCancelledException') console.error('Render hatası', e);
@@ -75,7 +83,7 @@ function PageView({ page, index, zoom, scrollRoot }) {
             clearTimeout(timer);
             task?.cancel();
         };
-    }, [bytes, index, zoom, visible]);
+    }, [bytes, pageNo, index, zoom, visible, orig, page.width, page.height]);
 
     useEffect(() => () => pageCanvases.delete(index), [index]);
 
@@ -94,7 +102,7 @@ function PageView({ page, index, zoom, scrollRoot }) {
             {!rendered && <div className="absolute inset-0 skeleton opacity-60" />}
 
             {/* Katmanlar: sayfa birimlerinde, zoom ile ölçeklenir */}
-            <div className="absolute top-0 left-0" style={{ width: page.width, height: page.height, transform: `scale(${zoom})`, transformOrigin: '0 0' }}>
+            <div className="absolute top-0 left-0" style={{ width: page.width, height: page.height, transform: `scale(${zoom})`, transformOrigin: '0 0', visibility: state.compare ? 'hidden' : undefined }}>
                 {state.search?.results?.length > 0 && <SearchLayer {...layerProps} />}
                 {(tool === 'redact' || state.redactions[page.id]?.length > 0) && <RedactLayer {...layerProps} interactive={tool === 'redact'} />}
                 <ObjectLayer {...layerProps} interactive={tool === 'select'} />

@@ -226,6 +226,7 @@ const EN = {
     'Kiti paylaş': 'Share the kit',
     'Ekibinizle aynı logo ve renkleri kullanmak için kiti dosyaya aktarın, diğer bilgisayarda içe aktarın.': 'To use the same logos and colors as your team, export the kit to a file and import it on the other computer.',
     'Bu tarayıcı kalıcı depolamayı engelliyor; marka kiti yalnızca bu oturumda geçerli. Kiti dışa aktararak saklayın.': 'This browser blocks persistent storage; the brand kit only lasts for this session. Export the kit to keep it.',
+    'Önce / sonra (basılı tutun)': 'Before / after (hold)',
     // Düzelt: tüm yazılar
     'Tüm yazıları bul ve düzelt': 'Find and fix all text', 'Değişiklik yok': 'No changes', 'Yazılar aranıyor...': 'Looking for text...', 'Görselde yazı bulunamadı': 'No text found in the image',
     'Yazılar düzeltiliyor...': 'Fixing text...', 'yazı düzeltildi': 'texts fixed', 'yazıyı düzelt': 'fix texts', 'Bu yazıyı sil': 'Delete this text',

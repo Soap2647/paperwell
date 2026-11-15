@@ -82,7 +82,8 @@ function findObject(objects, id) {
 function reducer(s, a) {
     switch (a.type) {
         case 'LOAD':
-            return { ...initialState, opts: s.opts, doc: a.doc, objects: a.objects || {}, zoom: s.zoom, rulers: s.rulers, tool: 'select', loadId: Date.now() };
+            // original: açılıştaki hali (önce/sonra karşılaştırması için; geri alma geçmişi sınırlı olduğundan ayrıca tutulur)
+            return { ...initialState, opts: s.opts, doc: a.doc, objects: a.objects || {}, zoom: s.zoom, rulers: s.rulers, tool: 'select', loadId: Date.now(), original: { bytes: a.doc.bytes, pages: a.doc.pages } };
         case 'CLOSE':
             return { ...initialState, opts: s.opts, rulers: s.rulers };
         case 'COMMIT': {

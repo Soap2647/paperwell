@@ -1,6 +1,6 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, FileImage, FileText,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, FileImage, FileText,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { download, exportPng } from '../store/actions';
@@ -101,6 +101,13 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                 />
                 <IconButton size="sm" icon={ZoomIn} label={t('Yakınlaştır')} shortcut="Ctrl +" onClick={() => setZoom(state.zoom * 1.2)} />
                 <IconButton size="sm" icon={Ruler} label={t('Cetveller')} shortcut="Ctrl+R" active={state.rulers} onClick={() => dispatch({ type: 'SET', values: { rulers: !state.rulers } })} />
+                {state.dirty && (
+                    // basılı tutunca ilk hal görünür, bırakınca son hal
+                    <IconButton size="sm" icon={SplitSquareHorizontal} label={t('Önce / sonra (basılı tutun)')} active={!!state.compare}
+                        onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); dispatch({ type: 'SET', values: { compare: true } }); }}
+                        onPointerUp={() => dispatch({ type: 'SET', values: { compare: false } })}
+                        onPointerCancel={() => dispatch({ type: 'SET', values: { compare: false } })} />
+                )}
             </div>
 
             <div className="flex items-center gap-1 ml-auto md:ml-0">
