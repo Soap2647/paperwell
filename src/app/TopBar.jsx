@@ -123,10 +123,13 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                 <Button variant="primary" icon={Download} onClick={() => download(ed)} className="ml-1">
                     <span className="hidden sm:inline">{isImage ? t('PNG olarak indir') : isDesktop ? t('Kaydet') : t('İndir')}</span>
                 </Button>
-                {!isImage && <Menu trigger={<IconButton icon={ChevronDown} label={t('Dışa aktar')} size="sm" />} items={[
+                <Menu trigger={<IconButton icon={ChevronDown} label={t('Dışa aktar')} size="sm" />} items={isImage ? [
+                    { label: t('Orijinal boyutta kaydet'), icon: FileImage, onClick: () => download(ed) },
+                    { label: t('2 kat çözünürlükte kaydet (logolar daha net)'), icon: FileImage, onClick: () => download(ed, { scale: 2 }) },
+                ] : [
                     { label: t('PDF olarak indir'), icon: FileText, onClick: () => download(ed) },
                     { label: t('PNG görsel olarak indir'), icon: FileImage, onClick: () => exportPng(ed) },
-                ]} align="right" />}
+                ]} align="right" />
             </div>
         </header>
     );

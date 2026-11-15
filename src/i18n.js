@@ -183,6 +183,8 @@ const EN = {
     'Oluştur': 'Create',
     'Geçerli bir genişlik ve yükseklik yazın (en az yaklaşık 5 mm).': 'Enter a valid width and height (at least about 5 mm).',
     'PNG görsel olarak indir': 'Download as PNG image',
+    'Orijinal boyutta kaydet': 'Save at original size',
+    '2 kat çözünürlükte kaydet (logolar daha net)': 'Save at 2× resolution (sharper logos)',
     'Instagram gönderisi (kare)': 'Instagram post (square)',
     'Instagram gönderisi (dikey 4:5)': 'Instagram post (portrait 4:5)',
     'Hikaye / Reels (9:16)': 'Story / Reels (9:16)',
