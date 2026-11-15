@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Eraser, Type, BadgeCheck, X, ArrowLeft, Check, Upload, Loader2 } from 'lucide-react';
+import { Eraser, Type, BadgeCheck, X, ArrowLeft, Check, Upload, Loader2, Bold } from 'lucide-react';
 import { useEditor } from '../../store/editor';
 import { eventToPage, capture } from '../objects';
 import { fixErase, fixStartText, fixApplyText, fixApplyLogo, clearFix, setFixStep } from '../fixActions';
 import { useBrandKit, addBrandAsset } from '../../core/brandKit';
-import { Button } from '../../components/ui';
+import { Button, cx } from '../../components/ui';
+import FontPicker from '../FontPicker';
 import { toast } from '../../components/Toaster';
 import { t } from '../../i18n';
 
@@ -164,11 +165,17 @@ function Menu({ ed }) {
 }
 
 function TextStep({ ed, fix }) {
+    const kit = useBrandKit();
     const [text, setText] = useState(fix.text || '');
+    // stil: yazı tipi marka fontundan başlar; renk ve kalınlık "Otomatik" iken eski yazıdan ölçülür
+    const [family, setFamily] = useState(ed.state.opts.text.family);
+    const [color, setColor] = useState('auto');
+    const [bold, setBold] = useState('auto');
     const [seen, setSeen] = useState(fix.text);
     // okuma bitince okunan yazı kutuya gelir (kullanıcı henüz yazmadıysa)
     if (fix.text !== seen) { setSeen(fix.text); if (!text) setText(fix.text || ''); }
-    const apply = () => fixApplyText(ed, text);
+    const apply = () => fixApplyText(ed, text, { family, color: color === 'auto' ? null : color, bold: bold === 'auto' ? null : bold === 'bold' });
+    const chip = (on) => cx('h-7 px-2 rounded-md border text-[11.5px] font-medium', on ? 'border-accent bg-accent-soft text-accent-text' : 'border-line hover:bg-surface-2');
     return (
         <div className="w-72 space-y-2">
             <div className="text-xs font-medium text-fg-2 px-0.5 flex items-center gap-1.5">
@@ -178,6 +185,20 @@ function TextStep({ ed, fix }) {
                 onKeyDown={(e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); apply(); } if (e.key === 'Escape') clearFix(ed); }}
                 placeholder={fix.reading ? '' : t('Buraya yazın')}
                 className="w-full rounded-lg border border-line bg-surface-2 px-2.5 py-2 text-[13px] resize-none focus:outline-none focus:border-accent" />
+            <FontPicker value={family} onChange={setFamily} />
+            <div className="flex flex-wrap items-center gap-1">
+                <button type="button" className={chip(color === 'auto')} onClick={() => setColor('auto')} title={t('Eski yazının rengi')}>{t('Otomatik')}</button>
+                {kit.colors.slice(0, 8).map((c) => (
+                    <button key={c.hex} type="button" aria-label={c.hex} title={c.hex} onClick={() => setColor(c.hex)}
+                        className={cx('w-6 h-6 rounded-full border border-black/15', color === c.hex && 'ring-2 ring-accent ring-offset-1 ring-offset-surface')} style={{ background: c.hex }} />
+                ))}
+            </div>
+            <div className="flex items-center gap-1">
+                <Bold className="w-3.5 h-3.5 text-fg-3 mr-0.5" />
+                {[['auto', 'Otomatik'], ['normal', 'Normal'], ['bold', 'Kalın']].map(([v, l]) => (
+                    <button key={v} type="button" className={chip(bold === v)} onClick={() => setBold(v)}>{t(l)}</button>
+                ))}
+            </div>
             <div className="flex items-center gap-1.5 justify-end">
                 <Button size="sm" icon={ArrowLeft} onClick={() => setFixStep(ed, 'menu')}>{t('Geri')}</Button>
                 <Button size="sm" variant="primary" icon={Check} disabled={!text.trim()} onClick={apply}>{t('Uygula')}</Button>

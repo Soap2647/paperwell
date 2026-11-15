@@ -226,6 +226,8 @@ const EN = {
     'Kiti paylaş': 'Share the kit',
     'Ekibinizle aynı logo ve renkleri kullanmak için kiti dosyaya aktarın, diğer bilgisayarda içe aktarın.': 'To use the same logos and colors as your team, export the kit to a file and import it on the other computer.',
     'Bu tarayıcı kalıcı depolamayı engelliyor; marka kiti yalnızca bu oturumda geçerli. Kiti dışa aktararak saklayın.': 'This browser blocks persistent storage; the brand kit only lasts for this session. Export the kit to keep it.',
+    // Düzelt: yazı stili
+    'Otomatik': 'Auto', 'Eski yazının rengi': 'Color of the old text',
     // Düzelt: fırça
     'Fırça': 'Brush',
     'Bozuk yerin üstünü fırçayla boyayın (Shift: boyamaya ekle). Çapraz ya da kıvrık detaylarda kutudan daha az yer silinir. Bırakınca menü çıkar:': 'Paint over the broken spot (Shift: add to the painting). For diagonal or curved details this erases less than a box. Release to see the menu:',

@@ -150,7 +150,7 @@ async function layoutText(text, rect, ink, family, bold) {
 }
 
 /** Yazıyı düzelt 2. adım: eski yazı silinir, yerine (marka fontuyla, eskisinin boyut ve kalınlığında) düzenlenebilir yazı gelir */
-export async function fixApplyText(ed, text) {
+export async function fixApplyText(ed, text, style = {}) {
     const fix = ed.get().fix;
     text = text.trim();
     if (!fix || !text) return;
@@ -161,13 +161,14 @@ export async function fixApplyText(ed, text) {
         const st = a.whole ? null : inkStats(a.core, a.region.x1 - a.region.x0, a.region.y1 - a.region.y0);
         const ink = st && { x: prep.ox + (a.region.x0 + st.box.x0) * prep.k, y: prep.oy + (a.region.y0 + st.box.y0) * prep.k, w: (st.box.x1 - st.box.x0) * prep.k, h: (st.box.y1 - st.box.y0) * prep.k };
         const erased = await eraseRegion(prep.canvas, prep.box, { a });
-        const { family, italic } = s.opts.text;
-        // harf gövdesi kalınsa (yüksekliğin ~%12'sinden fazla) yeni yazı da kalın
-        const bold = st ? st.stroke > 0.12 : s.opts.text.bold;
+        const { italic } = s.opts.text;
+        const family = style.family || s.opts.text.family;
+        // harf gövdesi kalınsa (yüksekliğin ~%12'sinden fazla) yeni yazı da kalın; kullanıcı seçtiyse o
+        const bold = style.bold ?? (st ? st.stroke > 0.12 : s.opts.text.bold);
         const L = await layoutText(text, fix.rect, ink, family, bold);
         const obj = {
-            id: newId('ob'), type: 'text', text, family, bold, italic, size: L.size,
-            color: a.fg ? toHex(a.fg) : s.opts.text.color, align: 'center', lineHeight: 1.25, opacity: 1,
+            id: newId('ob'), type: 'text', text, family, bold, italic, size: Math.round(L.size * 10) / 10,
+            color: style.color || (a.fg ? toHex(a.fg) : s.opts.text.color), align: 'center', lineHeight: 1.25, opacity: 1,
             x: L.x, y: L.y, w: L.w, h: L.h, rotation: 0, name: text.split('\n')[0],
         };
         await commit(ed, fix, prep, erased, [obj]);
