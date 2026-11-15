@@ -226,6 +226,12 @@ const EN = {
     'Kiti paylaş': 'Share the kit',
     'Ekibinizle aynı logo ve renkleri kullanmak için kiti dosyaya aktarın, diğer bilgisayarda içe aktarın.': 'To use the same logos and colors as your team, export the kit to a file and import it on the other computer.',
     'Bu tarayıcı kalıcı depolamayı engelliyor; marka kiti yalnızca bu oturumda geçerli. Kiti dışa aktararak saklayın.': 'This browser blocks persistent storage; the brand kit only lasts for this session. Export the kit to keep it.',
+    // Çoklu seçim
+    'nesne seçili': 'objects selected', 'Hizala': 'Align', 'Hepsini sil': 'Delete all',
+    'Sürükleyince hepsi birlikte taşınır. Shift ile tıklayarak seçime ekleyip çıkarabilirsiniz.': 'Drag to move them all together. Shift+click to add to or remove from the selection.',
+    'Grupla (hep birlikte kalsın)': 'Group (keep together)', 'Gruplandı: artık birlikte taşınırlar': 'Grouped: they now move together',
+    'Sola hizala': 'Align left', 'Yatayda ortala': 'Center horizontally', 'Sağa hizala': 'Align right',
+    'Üste hizala': 'Align top', 'Dikeyde ortala': 'Center vertically', 'Alta hizala': 'Align bottom',
     // Düzelt aracı ve görseli yeni boyuta yayma
     'Düzelt': 'Fix', 'Geri': 'Back', 'Dosyadan seç': 'Choose file', 'Logo koy': 'Place logo', 'Yazıyı düzelt': 'Fix text',
     'Bozuk yeri kutula: sil, yazıyı düzelt ya da logo koy': 'Box a broken spot: erase it, fix the text or place a logo',

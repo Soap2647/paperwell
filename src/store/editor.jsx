@@ -128,6 +128,13 @@ function reducer(s, a) {
             if (a.transient) return { ...s, objects };
             return { ...s, objects, past: pushPast(s), future: [], dirty: true };
         }
+        case 'REMOVE_OBJECTS': {
+            // çoklu seçimi tek geri alma adımında siler
+            const ids = new Set(a.ids);
+            const objects = {};
+            for (const [pid, list] of Object.entries(s.objects)) objects[pid] = list.filter((o) => !ids.has(o.id));
+            return { ...s, past: pushPast(s), future: [], objects, selected: null, editing: null, dirty: true };
+        }
         case 'REMOVE_OBJECT': {
             const f = findObject(s.objects, a.id);
             if (!f) return s;

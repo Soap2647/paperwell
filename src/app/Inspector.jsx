@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import {
     Bold, Italic, AlignLeft, AlignCenter, AlignRight, Trash2, Copy, ArrowUp, ArrowDown, Square, Circle, Minus, MoveRight,
     Pen, Highlighter, Underline, Strikethrough, ImageUp, Plus, Check, X, Download, Sparkles, Zap, Search, ImageMinus, ScanLine, Layers,
+    Group, Ungroup, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
 } from 'lucide-react';
+import { bbox, moveBy } from './objects';
 import { useEditor, findObject } from '../store/editor';
 import { commitBytes, withBusy } from '../store/actions';
 import { newId } from '../core/pageOps';
@@ -154,6 +156,57 @@ function GroupInfo({ o, pageId }) {
             <p className="leading-relaxed">{t('Bu parça bir grubun içinde')} ({members.length}): {t('birlikte taşınırlar.')}</p>
             <Button size="sm" onClick={() => dispatch({ type: 'UPDATE_OBJECTS', updates: members.map((q) => ({ id: q.id, changes: { groupId: undefined } })) })}>{t('Grubu çöz')}</Button>
         </div>
+    );
+}
+
+/** Birden fazla nesne seçili: grupla, hizala, sil */
+function MultiPanel({ pageId, ids }) {
+    const { state, dispatch } = useEditor();
+    const objs = (state.objects[pageId] || []).filter((o) => ids.includes(o.id));
+    const free = objs.filter((o) => !o.locked);
+    const grouped = objs.length > 1 && objs.every((o) => o.groupId && o.groupId === objs[0].groupId);
+    const bs = free.map(bbox);
+    const box = bs.length && { x0: Math.min(...bs.map((b) => b.x)), y0: Math.min(...bs.map((b) => b.y)), x1: Math.max(...bs.map((b) => b.x + b.w)), y1: Math.max(...bs.map((b) => b.y + b.h)) };
+    // seçimin toplam kutusuna göre hizalar
+    const align = (mode) => dispatch({
+        type: 'UPDATE_OBJECTS',
+        updates: free.map((o, i) => {
+            const b = bs[i];
+            const dx = mode === 'left' ? box.x0 - b.x : mode === 'right' ? box.x1 - (b.x + b.w) : mode === 'hcenter' ? (box.x0 + box.x1) / 2 - (b.x + b.w / 2) : 0;
+            const dy = mode === 'top' ? box.y0 - b.y : mode === 'bottom' ? box.y1 - (b.y + b.h) : mode === 'vcenter' ? (box.y0 + box.y1) / 2 - (b.y + b.h / 2) : 0;
+            return { id: o.id, changes: moveBy(o, dx, dy) };
+        }),
+    });
+    const group = () => {
+        const gid = newId('gp');
+        dispatch({ type: 'UPDATE_OBJECTS', updates: objs.map((o) => ({ id: o.id, changes: { groupId: gid } })) });
+        toast(t('Gruplandı: artık birlikte taşınırlar'), 'success', 3000);
+    };
+    const ungroup = () => dispatch({ type: 'UPDATE_OBJECTS', updates: objs.map((o) => ({ id: o.id, changes: { groupId: undefined } })) });
+    const ALIGN = [
+        ['left', AlignStartVertical, 'Sola hizala'], ['hcenter', AlignCenterVertical, 'Yatayda ortala'], ['right', AlignEndVertical, 'Sağa hizala'],
+        ['top', AlignStartHorizontal, 'Üste hizala'], ['vcenter', AlignCenterHorizontal, 'Dikeyde ortala'], ['bottom', AlignEndHorizontal, 'Alta hizala'],
+    ];
+    return (
+        <Section title={`${objs.length} ${t('nesne seçili')}`}>
+            <p className="text-xs text-fg-3 leading-relaxed">{t('Sürükleyince hepsi birlikte taşınır. Shift ile tıklayarak seçime ekleyip çıkarabilirsiniz.')}</p>
+            {grouped
+                ? <Button icon={Ungroup} className="w-full" onClick={ungroup}>{t('Grubu çöz')}</Button>
+                : <Button variant="primary" icon={Group} className="w-full" onClick={group}>{t('Grupla (hep birlikte kalsın)')}</Button>}
+            {free.length > 1 && (
+                <Field label={t('Hizala')}>
+                    <div className="grid grid-cols-6 gap-1">
+                        {ALIGN.map(([m, Icon, label]) => (
+                            <button key={m} type="button" title={t(label)} aria-label={t(label)} onClick={() => align(m)}
+                                className="h-8 rounded-lg border border-line flex items-center justify-center text-fg-2 hover:bg-surface-2 hover:text-fg">
+                                <Icon className="w-4 h-4" />
+                            </button>
+                        ))}
+                    </div>
+                </Field>
+            )}
+            <Button variant="danger" icon={Trash2} className="w-full" onClick={() => dispatch({ type: 'REMOVE_OBJECTS', ids })}>{t('Hepsini sil')}</Button>
+        </Section>
     );
 }
 
@@ -583,6 +636,7 @@ export default function Inspector() {
     let content;
     if (editing?.kind === 'line') content = <LineEditPanel editing={editing} />;
     else if (editing?.kind === 'image') content = <ImageEditPanel editing={editing} />;
+    else if (state.selected?.ids?.length > 1) content = <MultiPanel pageId={state.selected.pageId} ids={state.selected.ids} />;
     else if (sel) content = <ObjectPanel key={sel.obj.id} o={sel.obj} pageId={sel.pageId} />;
     else content = <ToolPanel tool={state.tool} />;
 

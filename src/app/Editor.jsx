@@ -42,7 +42,21 @@ export default function Editor() {
 
             if (mod && key === 'r') { e.preventDefault(); dispatch({ type: 'SET', values: { rulers: !s.rulers } }); return; }
 
-            const sel = s.selected && findObject(s.objects, s.selected.id);
+            // çoklu seçim: sil ve ok tuşlarıyla kaydır
+            const multi = s.selected?.ids?.length > 1 ? s.selected.ids : null;
+            if (multi) {
+                if (key === 'delete' || key === 'backspace') { e.preventDefault(); dispatch({ type: 'REMOVE_OBJECTS', ids: multi }); return; }
+                if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(key)) {
+                    e.preventDefault();
+                    const d = e.shiftKey ? 10 : 1;
+                    const dx = key === 'arrowleft' ? -d : key === 'arrowright' ? d : 0;
+                    const dy = key === 'arrowup' ? -d : key === 'arrowdown' ? d : 0;
+                    const list = s.objects[s.selected.pageId] || [];
+                    dispatch({ type: 'UPDATE_OBJECTS', updates: list.filter((o) => multi.includes(o.id) && !o.locked).map((o) => ({ id: o.id, changes: moveBy(o, dx, dy) })) });
+                    return;
+                }
+            }
+            const sel = !multi && s.selected && findObject(s.objects, s.selected.id);
             if (sel) {
                 if (key === 'delete' || key === 'backspace') { e.preventDefault(); dispatch({ type: 'REMOVE_OBJECT', id: sel.obj.id }); return; }
                 if (mod && key === 'd') {

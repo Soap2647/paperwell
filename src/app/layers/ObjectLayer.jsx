@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, useState, useEffect } from 'react';
 import { StickyNote } from 'lucide-react';
 import { useEditor } from '../../store/editor';
 import { arrowHead } from '../../core/export';
-import { bbox, resizeObject, textStyle, pointsToPath, moveBy } from '../objects';
+import { bbox, resizeObject, textStyle, pointsToPath, moveBy, eventToPage } from '../objects';
 import { snapTargets, snapMove, snapResize, matchedLines, mmText } from '../snap';
 import { t } from '../../i18n';
 
@@ -15,6 +15,11 @@ export default function ObjectLayer({ page, zoom, interactive, objects }) {
     // objects: dışarıdan verilen liste (sayfa küçük resmi gecikmeli değer kullanır); yoksa mağazadaki
     const objs = (objects ?? state.objects[page.id] ?? []).filter((o) => !o.hidden);
     const selectedId = state.selected?.pageId === page.id ? state.selected.id : null;
+    // çoklu seçim (kutu seçimi ya da Shift+tık): selected.ids
+    const multiIds = state.selected?.pageId === page.id && state.selected.ids?.length > 1 ? state.selected.ids : null;
+    const rootRef = useRef(null);
+    const bandRef = useRef(null);
+    const [band, setBand] = useState(null);
     const editingId = state.editing?.kind === 'text' || state.editing?.kind === 'note' ? state.editing.id : null;
     const drag = useRef(null);
     const [fx, setFx] = useState(null); // sürükleme sırasında akıllı kılavuz çizgileri ve ölçü etiketi
@@ -48,7 +53,12 @@ export default function ObjectLayer({ page, zoom, interactive, objects }) {
                     : d.handle === 'p1' || d.handle === 'p2' ? null : `${mmText(nb.w)} × ${mmText(nb.h)} mm`;
             setFx({ lines: snapOn && (d.handle === 'move' || edge) ? matchedLines(nb, d.targets) : [], label, box: nb });
         };
-        const up = () => { drag.current = null; setFx(null); };
+        const up = () => {
+            const d = drag.current;
+            // çoklu seçimde bir nesneye tıklayıp sürüklemeden bırakmak yalnız onu seçer
+            if (d && !d.moved && d.single) dispatch({ type: 'SET', values: { selected: { pageId: d.pageId, id: d.single } } });
+            drag.current = null; setFx(null);
+        };
         window.addEventListener('pointermove', move);
         window.addEventListener('pointerup', up);
         return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
@@ -58,33 +68,70 @@ export default function ObjectLayer({ page, zoom, interactive, objects }) {
         if (!interactive || e.button !== 0) return;
         e.stopPropagation();
         e.preventDefault();
-        if (selectedId !== o.id) dispatch({ type: 'SET', values: { selected: { pageId: page.id, id: o.id }, editing: null } });
-        if (o.locked) return; // kilitli katman seçilir ama taşınmaz
-        // Grup (ör. buton + içindeki yazı): taşırken üyeler birlikte gider; kılavuz yakalama grubun toplam kutusuna göre
-        const members = handle === 'move' && o.groupId ? objs.filter((q) => q.groupId === o.groupId && !q.locked) : [o];
+        // Shift+tık: seçime ekle / çıkar
+        if (e.shiftKey && handle === 'move') {
+            const cur = multiIds || (selectedId ? [selectedId] : []);
+            const ids = cur.includes(o.id) ? cur.filter((i) => i !== o.id) : [...cur, o.id];
+            dispatch({ type: 'SET', values: { selected: ids.length ? { pageId: page.id, id: ids[ids.length - 1], ...(ids.length > 1 ? { ids } : {}) } : null, editing: null } });
+            return;
+        }
+        const inMulti = handle === 'move' && !!multiIds?.includes(o.id);
+        if (!inMulti && selectedId !== o.id) dispatch({ type: 'SET', values: { selected: { pageId: page.id, id: o.id }, editing: null } });
+        if (o.locked && !inMulti) return; // kilitli katman seçilir ama taşınmaz
+        // Çoklu seçim ve gruplar (ör. buton + içindeki yazı) birlikte taşınır; kılavuz yakalama toplam kutuya göre
+        const pick = new Set(inMulti ? multiIds : [o.id]);
+        const gids = new Set(objs.filter((q) => pick.has(q.id) && q.groupId).map((q) => q.groupId));
+        const members = handle === 'move' ? objs.filter((q) => (pick.has(q.id) || (q.groupId && gids.has(q.groupId))) && !q.locked) : [o];
+        if (!members.length) return;
         const boxes = members.map(bbox);
         const x0 = Math.min(...boxes.map((b) => b.x)), y0 = Math.min(...boxes.map((b) => b.y));
         const x1 = Math.max(...boxes.map((b) => b.x + b.w)), y1 = Math.max(...boxes.map((b) => b.y + b.h));
         const ids = new Set(members.map((q) => q.id));
         drag.current = {
-            id: o.id, handle, sx: e.clientX, sy: e.clientY, orig: o, keepAspect: o.type === 'image', members,
+            id: o.id, handle, sx: e.clientX, sy: e.clientY, orig: o, keepAspect: o.type === 'image', members, single: inMulti ? o.id : null, pageId: page.id,
             box: members.length > 1 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : bbox(o),
             targets: snapTargets(objs.filter((q) => !ids.has(q.id)), null, page, guidesRef.current, bbox),
         };
     };
 
-    const selected = objs.find((o) => o.id === selectedId);
+    const selected = multiIds ? null : objs.find((o) => o.id === selectedId);
+    const multiObjs = multiIds ? objs.filter((o) => multiIds.includes(o.id)) : [];
+
+    // Boş yerden sürükleme: kutu seçimi (değdiği her nesne seçilir; Shift: mevcut seçime ekler)
+    const bandDown = (e) => {
+        if (e.button !== 0) return;
+        const p = eventToPage(e, rootRef.current, zoom);
+        if (!e.shiftKey && (selectedId || editingId)) dispatch({ type: 'SET', values: { selected: null, editing: null } });
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        bandRef.current = { a: p, add: e.shiftKey ? multiIds || (selectedId ? [selectedId] : []) : [] };
+    };
+    const bandMove = (e) => {
+        const b = bandRef.current;
+        if (!b) return;
+        const p = eventToPage(e, rootRef.current, zoom);
+        setBand({ x: Math.min(b.a[0], p[0]), y: Math.min(b.a[1], p[1]), w: Math.abs(p[0] - b.a[0]), h: Math.abs(p[1] - b.a[1]) });
+    };
+    const bandUp = () => {
+        const b = bandRef.current, r = band;
+        bandRef.current = null;
+        setBand(null);
+        if (!b || !r || (r.w < 3 / zoom && r.h < 3 / zoom)) return;
+        const hit = objs.filter((o) => {
+            if (o.locked) return false;
+            const q = bbox(o);
+            return q.x < r.x + r.w && q.x + q.w > r.x && q.y < r.y + r.h && q.y + q.h > r.y;
+        }).map((o) => o.id);
+        const ids = [...new Set([...b.add, ...hit])];
+        if (!ids.length) return;
+        dispatch({ type: 'SET', values: { selected: { pageId: page.id, id: ids[ids.length - 1], ...(ids.length > 1 ? { ids } : {}) }, editing: null } });
+    };
     const pe = interactive ? 'auto' : 'none';
 
     return (
         // isolation: nesnelerin z-index'i (liste sırası) sayfanın diğer katmanlarını aşmasın
-        <div className="absolute inset-0" style={{ pointerEvents: 'none', isolation: 'isolate' }}>
+        <div ref={rootRef} className="absolute inset-0" style={{ pointerEvents: 'none', isolation: 'isolate' }}>
             {interactive && (
-                <div
-                    className="absolute inset-0"
-                    style={{ pointerEvents: 'auto' }}
-                    onPointerDown={() => (selectedId || editingId) && dispatch({ type: 'SET', values: { selected: null, editing: null } })}
-                />
+                <div className="absolute inset-0 touch-none" style={{ pointerEvents: 'auto' }} onPointerDown={bandDown} onPointerMove={bandMove} onPointerUp={bandUp} onPointerCancel={bandUp} />
             )}
 
             {/* Yığın sırası liste sırasıdır (dışa aktarımla aynı): görsel, şekil ve metin birbirinin üstüne geçebilir; notlar hep üstte */}
@@ -136,6 +183,12 @@ export default function ObjectLayer({ page, zoom, interactive, objects }) {
                     )}
                 </div>
             )}
+
+            {band && (
+                <div className="absolute pointer-events-none" style={{ left: band.x, top: band.y, width: band.w, height: band.h, zIndex: 1000002, border: `${1 / zoom}px solid var(--accent)`, background: 'color-mix(in srgb, var(--accent) 12%, transparent)' }} />
+            )}
+
+            {multiObjs.length > 1 && interactive && <MultiSelection objs={multiObjs} zoom={zoom} />}
 
             {selected && interactive && editingId !== selected.id && (
                 <div className="absolute inset-0" style={{ pointerEvents: 'none', zIndex: 1000000 }}>
@@ -296,6 +349,21 @@ function NoteObject({ o, open, interactive, onPointerDown, onOpen }) {
                 </div>
             )}
         </>
+    );
+}
+
+/** Çoklu seçim: her nesnenin ince çerçevesi + hepsini saran kesikli kutu */
+function MultiSelection({ objs, zoom }) {
+    const bs = objs.map(bbox), sw = 1.25 / zoom, p = 3 / zoom;
+    const x0 = Math.min(...bs.map((b) => b.x)), y0 = Math.min(...bs.map((b) => b.y));
+    const x1 = Math.max(...bs.map((b) => b.x + b.w)), y1 = Math.max(...bs.map((b) => b.y + b.h));
+    return (
+        <div className="absolute inset-0" style={{ pointerEvents: 'none', zIndex: 1000000 }}>
+            <svg className="absolute inset-0 overflow-visible" style={{ width: '100%', height: '100%' }}>
+                {bs.map((b, i) => <rect key={i} x={b.x} y={b.y} width={b.w} height={b.h} fill="none" stroke="var(--accent)" strokeWidth={sw} opacity={0.7} />)}
+                <rect x={x0 - p} y={y0 - p} width={x1 - x0 + 2 * p} height={y1 - y0 + 2 * p} fill="none" stroke="var(--accent)" strokeWidth={sw * 1.4} strokeDasharray={`${5 / zoom} ${3 / zoom}`} />
+            </svg>
+        </div>
     );
 }
 
