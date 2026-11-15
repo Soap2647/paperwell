@@ -24,6 +24,8 @@ import { t } from '../i18n';
 import { TOOLS } from './tools';
 import LayersPanel from './LayersPanel';
 import BrandPanel from './BrandPanel';
+import FixAllPanel from './FixAllPanel';
+import { fixFindTexts } from './fixActions';
 import { runMagicLayers, runMagicLayersOnObject } from './magicLayersAction';
 import { readImageFile } from './imageFiles';
 import { loadSignatures, saveSignatures } from './dialogs/SignatureDialog';
@@ -378,8 +380,10 @@ function ToolPanel({ tool }) {
             {tool === 'sign' && <SignToolPanel />}
             {tool === 'note' && <Field label={t('Renk')}><ColorPicker value={opts.color} swatches={['#facc15', '#fb923c', '#4ade80', '#60a5fa', '#f472b6', '#c084fc']} onChange={(color) => set({ color })} /></Field>}
             {tool === 'brand' && <BrandPanel />}
-            {tool === 'fix' && (
+            {tool === 'fix' && state.fix?.step === 'all' && <FixAllPanel key={state.fix.items.length + ':' + state.fix.pageIndex} fix={state.fix} />}
+            {tool === 'fix' && state.fix?.step !== 'all' && (
                 <div className="space-y-3 text-[13px] text-fg-2 leading-relaxed">
+                    <Button icon={Search} className="w-full" onClick={() => fixFindTexts(ed)}>{t('Tüm yazıları bul ve düzelt')}</Button>
                     <Segmented value={opts.mode} onChange={(mode) => set({ mode })} options={[{ value: 'box', label: t('Kutu') }, { value: 'brush', label: t('Fırça') }]} />
                     {opts.mode === 'brush' && <Slider label={t('Fırça boyutu')} value={opts.size} min={4} max={120} step={1} unit=" pt" onChange={(size) => set({ size })} />}
                     <p>{opts.mode === 'brush'

@@ -3,7 +3,7 @@
 import { smartMask, dilate } from './smartMask';
 import { fillHoles } from './magicLayers';
 import { isLamaCached } from './inpaint/lama';
-import { detectText, recognize, cropRotated } from './textDetect';
+import { detectText, recognize, cropRotated, rectCorners } from './textDetect';
 import { recognizeLine } from './ocr';
 import { mergeDiacritics } from './ocrMerge';
 
@@ -96,6 +96,30 @@ export async function readRegionText(canvas, box) {
     if (!lines.length) return { text: '', lineH: 0 };
     const hs = lines.map((l) => l.h).sort((p, q) => p - q);
     return { text: lines.map((l) => l.parts.sort((p, q) => p.x - q.x).map((p) => p.text).join(' ')).join('\n'), lineH: hs[hs.length >> 1] };
+}
+
+/**
+ * Görseldeki bütün yazı satırlarını bulur ve okur. Kutular zemin payıyla genişletilir (Düzelt kenarı zemin sayar).
+ * @returns {Promise<{text: string, x0: number, y0: number, x1: number, y1: number}[]>} canvas pikseli, yukarıdan aşağı
+ */
+export async function findTextLines(canvas) {
+    const out = [];
+    for (const b of await detectText(canvas)) {
+        const r = await recognize(canvas, b);
+        if (!r.text || r.conf < 0.5) continue;
+        let text = r.text;
+        try {
+            const tr = await recognizeLine(cropRotated(canvas, { ...b, w: b.w + b.h * 0.4, h: b.h * 1.2 }, 72));
+            if (tr.text) text = mergeDiacritics(text, tr.text);
+        } catch { /* Tesseract yoksa Paddle sonucu */ }
+        const cs = rectCorners(b), pad = b.h * 0.25;
+        out.push({
+            text,
+            x0: Math.max(0, Math.min(...cs.map((c) => c[0])) - pad), y0: Math.max(0, Math.min(...cs.map((c) => c[1])) - pad),
+            x1: Math.min(canvas.width, Math.max(...cs.map((c) => c[0])) + pad), y1: Math.min(canvas.height, Math.max(...cs.map((c) => c[1])) + pad),
+        });
+    }
+    return out.sort((p, q) => p.y0 - q.y0 || p.x0 - q.x0);
 }
 
 /** Görselin piksellerini (en çok maxSide) canvas olarak yükler */

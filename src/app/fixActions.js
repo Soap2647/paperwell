@@ -4,7 +4,7 @@ import { commitBytes, withBusy } from '../store/actions';
 import { newId } from '../core/pageOps';
 import { renderRegion } from '../core/render';
 import { patchPage } from '../core/eraser';
-import { analyzeRegion, eraseRegion, readRegionText, loadImageCanvas, canvasToDataUrl, toHex } from '../core/regionFix';
+import { analyzeRegion, eraseRegion, readRegionText, findTextLines, loadImageCanvas, canvasToDataUrl, toHex } from '../core/regionFix';
 import { inkStats } from '../core/smartMask';
 import { isMiganCached, loadMigan } from '../core/inpaint/migan';
 import { isTextModelCached, loadTextModels, OCR_BYTES } from '../core/textDetect';
@@ -72,8 +72,14 @@ async function prepare(s, fix) {
     return withPaint(fix, { kind: 'page', region, scale, canvas, box, k: 1 / scale, ox: region.x, oy: region.y });
 }
 
-/** Onarılmış raster'ı belgeye yazar; extra: üstüne eklenecek nesneler. Tek geri alma adımı */
-async function commit(ed, fix, prep, erased, extra = []) {
+/** Silinen bölgenin maskesini canvas boyutundaki maskeye ekler */
+function addMask(full, W, erased) {
+    const r = erased.region, rw = r.x1 - r.x0;
+    for (let y = r.y0; y < r.y1; y++) for (let x = r.x0; x < r.x1; x++) if (erased.mask[(y - r.y0) * rw + (x - r.x0)]) full[y * W + x] = 1;
+}
+
+/** Onarılmış raster'ı belgeye yazar; full: canvas boyutunda değişen pikseller, extra: üstüne eklenecek nesneler. Tek geri alma adımı */
+async function commitFull(ed, fix, prep, full, extra = []) {
     const s = ed.get();
     const page = s.doc.pages[fix.pageIndex];
     let list = s.objects[page.id] || [];
@@ -83,11 +89,14 @@ async function commit(ed, fix, prep, erased, extra = []) {
         ed.dispatch({ type: 'COMMIT', bytes: s.doc.bytes, objects: { ...s.objects, [page.id]: [...list, ...extra] } });
         return;
     }
-    // sayfa: maske bölge koordinatından canvas boyutuna
-    const W = prep.canvas.width, full = new Uint8Array(W * prep.canvas.height), r = erased.region, rw = r.x1 - r.x0;
-    for (let y = r.y0; y < r.y1; y++) for (let x = r.x0; x < r.x1; x++) full[y * W + x] = erased.mask[(y - r.y0) * rw + (x - r.x0)];
     const bytes = await patchPage({ bytes: s.doc.bytes, pageIndex: fix.pageIndex, rect: prep.region, canvas: prep.canvas, scale: prep.scale, mask: full });
     await commitBytes(ed, bytes, { objects: { ...s.objects, [page.id]: [...list, ...extra] } });
+}
+
+async function commit(ed, fix, prep, erased, extra = []) {
+    const full = new Uint8Array(prep.canvas.width * prep.canvas.height);
+    addMask(full, prep.canvas.width, erased);
+    await commitFull(ed, fix, prep, full, extra);
 }
 
 const select = (ed, pageIndex, obj) => {
@@ -149,6 +158,65 @@ async function layoutText(text, rect, ink, family, bold) {
     return { size, x: area.x + area.w / 2 - w / 2, y, w, h };
 }
 
+/**
+ * Bir yazıyı raster üzerinde değiştirir: eski mürekkep silinir, yeni yazı nesnesi döner (metin boşsa yalnız silinir).
+ * prep.canvas yerinde güncellenir. @returns {Promise<{erased: object, obj: object|null}>}
+ */
+async function replaceText(s, prep, box, rect, text, style, paint) {
+    const a = analyzeRegion(prep.canvas, box, paint);
+    const st = a.whole ? null : inkStats(a.core, a.region.x1 - a.region.x0, a.region.y1 - a.region.y0);
+    const ink = st && { x: prep.ox + (a.region.x0 + st.box.x0) * prep.k, y: prep.oy + (a.region.y0 + st.box.y0) * prep.k, w: (st.box.x1 - st.box.x0) * prep.k, h: (st.box.y1 - st.box.y0) * prep.k };
+    const erased = await eraseRegion(prep.canvas, box, { a });
+    if (!text) return { erased, obj: null };
+    const family = style.family || s.opts.text.family;
+    // harf gövdesi kalınsa (yüksekliğin ~%12'sinden fazla) yeni yazı da kalın; kullanıcı seçtiyse o
+    const bold = style.bold ?? (st ? st.stroke > 0.12 : s.opts.text.bold);
+    const L = await layoutText(text, rect, ink, family, bold);
+    const obj = {
+        id: newId('ob'), type: 'text', text, family, bold, italic: s.opts.text.italic, size: Math.round(L.size * 10) / 10,
+        color: style.color || (a.fg ? toHex(a.fg) : s.opts.text.color), align: 'center', lineHeight: 1.25, opacity: 1,
+        x: L.x, y: L.y, w: L.w, h: L.h, rotation: 0, name: text.split('\n')[0],
+    };
+    return { erased, obj };
+}
+
+/** Görseldeki bütün yazıları bulur; Düzelt panelinde liste olarak düzeltilir */
+export async function fixFindTexts(ed) {
+    const s0 = ed.get();
+    if (!s0.doc || !(await ensureModels(ed, true))) return;
+    const page = s0.doc.pages[s0.page];
+    const fix = { pageIndex: s0.page, rect: { x: 0, y: 0, w: page.width, h: page.height } };
+    await withBusy(ed, t('Yazılar aranıyor...'), async () => {
+        const prep = await prepare(ed.get(), fix);
+        const lines = await findTextLines(prep.canvas);
+        const items = lines.map((l) => ({ text: l.text, rect: { x: prep.ox + l.x0 * prep.k, y: prep.oy + l.y0 * prep.k, w: (l.x1 - l.x0) * prep.k, h: (l.y1 - l.y0) * prep.k } }));
+        if (!items.length) { toast(t('Görselde yazı bulunamadı'), 'info'); return; }
+        ed.dispatch({ type: 'SET', values: { fix: { ...fix, step: 'all', items } } });
+    });
+}
+
+/** Listede değiştirilen yazıları tek seferde düzeltir (tek geri alma adımı). edits: [{ rect, text }], boş metin = sil */
+export async function fixApplyAll(ed, edits) {
+    const fix = ed.get().fix;
+    if (!fix || !edits.length || !(await ensureModels(ed, false))) return;
+    await withBusy(ed, t('Yazılar düzeltiliyor...'), async (progress) => {
+        const s = ed.get();
+        const prep = await prepare(s, fix);
+        const W = prep.canvas.width, full = new Uint8Array(W * prep.canvas.height), objs = [];
+        for (let i = 0; i < edits.length; i++) {
+            progress(i / edits.length);
+            const r = edits[i].rect;
+            const box = { x0: (r.x - prep.ox) / prep.k, y0: (r.y - prep.oy) / prep.k, x1: (r.x + r.w - prep.ox) / prep.k, y1: (r.y + r.h - prep.oy) / prep.k };
+            const { erased, obj } = await replaceText(s, prep, box, r, edits[i].text.trim(), {});
+            addMask(full, W, erased);
+            if (obj) objs.push(obj);
+        }
+        await commitFull(ed, fix, prep, full, objs);
+        ed.dispatch({ type: 'SET_TOOL', tool: 'select' });
+        toast(`${edits.length} ${t('yazı düzeltildi')}`, 'success', 4000);
+    });
+}
+
 /** Yazıyı düzelt 2. adım: eski yazı silinir, yerine (marka fontuyla, eskisinin boyut ve kalınlığında) düzenlenebilir yazı gelir */
 export async function fixApplyText(ed, text, style = {}) {
     const fix = ed.get().fix;
@@ -157,20 +225,7 @@ export async function fixApplyText(ed, text, style = {}) {
     await withBusy(ed, t('Yazı düzeltiliyor...'), async () => {
         const s = ed.get();
         const prep = await prepare(s, fix);
-        const a = analyzeRegion(prep.canvas, prep.box, prep.paint);
-        const st = a.whole ? null : inkStats(a.core, a.region.x1 - a.region.x0, a.region.y1 - a.region.y0);
-        const ink = st && { x: prep.ox + (a.region.x0 + st.box.x0) * prep.k, y: prep.oy + (a.region.y0 + st.box.y0) * prep.k, w: (st.box.x1 - st.box.x0) * prep.k, h: (st.box.y1 - st.box.y0) * prep.k };
-        const erased = await eraseRegion(prep.canvas, prep.box, { a });
-        const { italic } = s.opts.text;
-        const family = style.family || s.opts.text.family;
-        // harf gövdesi kalınsa (yüksekliğin ~%12'sinden fazla) yeni yazı da kalın; kullanıcı seçtiyse o
-        const bold = style.bold ?? (st ? st.stroke > 0.12 : s.opts.text.bold);
-        const L = await layoutText(text, fix.rect, ink, family, bold);
-        const obj = {
-            id: newId('ob'), type: 'text', text, family, bold, italic, size: Math.round(L.size * 10) / 10,
-            color: style.color || (a.fg ? toHex(a.fg) : s.opts.text.color), align: 'center', lineHeight: 1.25, opacity: 1,
-            x: L.x, y: L.y, w: L.w, h: L.h, rotation: 0, name: text.split('\n')[0],
-        };
+        const { erased, obj } = await replaceText(s, prep, prep.box, fix.rect, text, style, prep.paint);
         await commit(ed, fix, prep, erased, [obj]);
         select(ed, fix.pageIndex, obj);
         toast(t('Yazı düzeltildi. Fontu, rengi ve boyutu sağdaki panelden değiştirebilirsiniz.'), 'success', 5000);

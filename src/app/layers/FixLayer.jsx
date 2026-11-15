@@ -111,7 +111,7 @@ export default function FixLayer({ page, index, zoom }) {
         else clearFix(ed);
     };
 
-    const preview = d ? { x: Math.min(d.a[0], d.b[0]), y: Math.min(d.a[1], d.b[1]), w: Math.abs(d.b[0] - d.a[0]), h: Math.abs(d.b[1] - d.a[1]) } : fix?.brush ? null : fix?.rect;
+    const preview = d ? { x: Math.min(d.a[0], d.b[0]), y: Math.min(d.a[1], d.b[1]), w: Math.abs(d.b[0] - d.a[0]), h: Math.abs(d.b[1] - d.a[1]) } : fix?.brush || fix?.step === 'all' ? null : fix?.rect;
 
     return (
         <div ref={ref} className="absolute inset-0 touch-none" style={{ cursor: brush ? 'none' : 'crosshair' }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => setCursor(null)}>
@@ -128,7 +128,16 @@ export default function FixLayer({ page, index, zoom }) {
                     outline: `${2 / zoom}px dashed #7c5cff`, background: 'rgba(124,92,255,.10)', boxShadow: `0 0 0 ${1 / zoom}px rgba(255,255,255,.8)`,
                 }} />
             )}
-            {fix && !d && !painting && <FixBar fix={fix} page={page} zoom={zoom} />}
+            {fix?.step === 'all' && fix.items.map((it, i) => (
+                <div key={i} className="absolute pointer-events-none" style={{
+                    left: it.rect.x, top: it.rect.y, width: it.rect.w, height: it.rect.h,
+                    outline: `${(fix.hover === i ? 2.5 : 1.5) / zoom}px solid ${fix.hover === i ? '#ff2d95' : '#7c5cff'}`, background: fix.hover === i ? 'rgba(255,45,149,.12)' : undefined,
+                }}>
+                    <span className="absolute rounded-full bg-accent text-white font-semibold flex items-center justify-center"
+                        style={{ left: -9 / zoom, top: -9 / zoom, width: 18 / zoom, height: 18 / zoom, fontSize: 10.5 / zoom }}>{i + 1}</span>
+                </div>
+            ))}
+            {fix && fix.step !== 'all' && !d && !painting && <FixBar fix={fix} page={page} zoom={zoom} />}
         </div>
     );
 }
