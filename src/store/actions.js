@@ -216,6 +216,37 @@ export async function resizeCurrentPage(ed, { width, height, pixelSize, fit = tr
     });
 }
 
+/**
+ * Görsel belgeyi yapay zekâyla 2 kat büyütür (sayfa boyutu aynı kalır, piksel sayısı artar): kaydedince
+ * görsel keskin, eklenen logo ve yazılar da iki kat çözünürlükte çıkar. Tek geri alma adımı.
+ */
+export async function upscaleImageDoc(ed, scale = 2) {
+    const { isUpscalerCached, loadUpscaler, upscaleCanvas } = await import('../core/upscale');
+    if (!(await isUpscalerCached()) && !window.confirm(`${t('Netleştirme modeli indirilecek. Bir kez iner, sonra çevrimdışı çalışır.')} (~5 MB)`)) return;
+    await withBusy(ed, t('Görsel netleştiriliyor...'), async (progress) => {
+        await loadUpscaler((p) => progress(p * 0.1, `${t('Model indiriliyor')} ${Math.round((p || 0) * 100)}%`));
+        const s = ed.get();
+        const page = s.doc.pages[s.page];
+        const base = (s.doc.imageSize?.w || page.width) / page.width;
+        if (Math.max(page.width, page.height) * base * scale > 8000) throw new Error(t('Görsel zaten çok büyük; daha fazla büyütülemez'));
+        const src = await renderPageToCanvas(s.doc.bytes, s.page, base, 'transparent');
+        const t0 = performance.now();
+        const big = await upscaleCanvas(src, scale, (p) => progress(0.1 + p * 0.85, `${t('Görsel netleştiriliyor...')} ${Math.round(p * 100)}%`));
+        const png = s.doc.mime === 'image/png' || s.doc.mime === undefined;
+        const blob = await new Promise((r) => big.toBlob(r, png ? 'image/png' : 'image/jpeg', 0.95));
+        const img = new Uint8Array(await blob.arrayBuffer());
+        const one = await PDFDocument.create();
+        const emb = png ? await one.embedPng(img) : await one.embedJpg(img);
+        one.addPage([page.width, page.height]).drawImage(emb, { x: 0, y: 0, width: page.width, height: page.height });
+        const fromDoc = await PDFDocument.load(await one.save());
+        const plan = s.doc.pages.map((p, i) => (i === s.page ? { fromDoc, srcIndex: 0, id: p.id } : { srcIndex: i, id: p.id }));
+        const bytes = await rebuildPages(s.doc.bytes, plan);
+        const pages = await readPages(bytes, s.doc.pages.map((p) => p.id));
+        ed.dispatch({ type: 'COMMIT', bytes, pages, docChanges: { imageSize: { w: big.width, h: big.height } } });
+        toast(`${t('Görsel netleştirildi')}: ${big.width} × ${big.height} px (${Math.round((performance.now() - t0) / 100) / 10} sn)`, 'success', 5000);
+    });
+}
+
 /** Görselin dışında kalan boşluğu (yeni oranın kenarları) görselin devamıyla doldurur: düz/degrade zemin analitik, kalanı yapay zekâ */
 async function extendEdges(c, ix, iy, iw, ih) {
     const W = c.width, H = c.height, ctx = c.getContext('2d', { willReadFrequently: true });

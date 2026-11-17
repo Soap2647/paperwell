@@ -1,9 +1,9 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
-import { download, exportPng, saveProject } from '../store/actions';
+import { download, exportPng, saveProject, upscaleImageDoc } from '../store/actions';
 import { clearRecovery } from './recovery';
 import { runMagicLayers } from './magicLayersAction';
 import { isDesktop } from '../platform';
@@ -131,6 +131,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                     { label: t('Projeyi kaydet (sonra düzenlenebilir)'), icon: FolderDown, onClick: () => saveProject(ed) },
                     '-',
                     ...(isImage ? [
+                    { label: t('Yapay zekâyla netleştir (2×), sonra kaydedin'), icon: Sparkles, onClick: () => upscaleImageDoc(ed, 2) },
                     { label: t('Orijinal boyutta kaydet'), icon: FileImage, onClick: () => download(ed) },
                     { label: t('2 kat çözünürlükte kaydet (logolar daha net)'), icon: FileImage, onClick: () => download(ed, { scale: 2 }) },
                 ] : [

@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { bbox, moveBy } from './objects';
 import { useEditor, findObject } from '../store/editor';
-import { commitBytes, withBusy } from '../store/actions';
+import { commitBytes, withBusy, upscaleImageDoc } from '../store/actions';
 import { newId } from '../core/pageOps';
 import { getPageModel, searchDocument } from '../core/modelCache';
 import { redactRects, replaceImageContent, deleteImage } from '../core/pdf/editOps';
@@ -668,10 +668,17 @@ function DocSummary() {
 
 function ImageDocActions() {
     const ed = useEditor();
-    const { dispatch } = ed;
+    const { state, dispatch } = ed;
+    const px = state.doc.imageSize ? Math.max(state.doc.imageSize.w, state.doc.imageSize.h) : 0;
     return (
         <div className="flex flex-col gap-2">
-            <Button variant="primary" icon={Layers} onClick={() => runMagicLayers(ed)}>{t('Sihirli Katmanlar')}</Button>
+            {px > 0 && px < 2000 && (
+                <div className="rounded-xl border border-accent/30 bg-accent-soft/50 p-2.5 space-y-2">
+                    <p className="text-xs text-fg-2 leading-relaxed">{t('Bu görsel')} {state.doc.imageSize.w} × {state.doc.imageSize.h} px. {t('Yapay zekâyla iki kat büyütüp netleştirirseniz kaydettiğiniz dosya keskin olur.')}</p>
+                    <Button variant="primary" icon={Sparkles} className="w-full" onClick={() => upscaleImageDoc(ed, 2)}>{t('Netleştir (2×)')}</Button>
+                </div>
+            )}
+            <Button variant={px > 0 && px < 2000 ? 'default' : 'primary'} icon={Layers} onClick={() => runMagicLayers(ed)}>{t('Sihirli Katmanlar')}</Button>
             <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: null } })}>{t('Arka planı kaldır')}</Button>
             <Button icon={ScanLine} onClick={() => dispatch({ type: 'SET', values: { dialog: 'scan' } })}>{t('Belge olarak tara')}</Button>
         </div>
