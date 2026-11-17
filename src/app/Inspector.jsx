@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
     Bold, Italic, AlignLeft, AlignCenter, AlignRight, Trash2, Copy, ArrowUp, ArrowDown, Square, Circle, Minus, MoveRight,
     Pen, Highlighter, Underline, Strikethrough, ImageUp, Plus, Check, X, Download, Sparkles, Zap, Search, ImageMinus, ScanLine, Layers,
-    Group, Ungroup, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
+    Group, Ungroup, Rows3, AlignHorizontalSpaceAround, AlignVerticalSpaceAround, Paintbrush, Eraser, Crop, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
 } from 'lucide-react';
 import { bbox, moveBy } from './objects';
 import { useEditor, findObject } from '../store/editor';
@@ -28,6 +28,8 @@ import FixAllPanel from './FixAllPanel';
 import { fixFindTexts } from './fixActions';
 import { runMagicLayers, runMagicLayersOnObject } from './magicLayersAction';
 import { readImageFile } from './imageFiles';
+import { logoEdit } from '../core/logoTools';
+import { useBrandKit } from '../core/brandKit';
 import { loadSignatures, saveSignatures } from './dialogs/SignatureDialog';
 
 const HIGHLIGHT_COLORS = ['#fde047', '#86efac', '#93c5fd', '#f9a8d4', '#fdba74', '#c4b5fd'];
@@ -185,6 +187,60 @@ function MultiPanel({ pageId, ids }) {
         toast(t('Gruplandı: artık birlikte taşınırlar'), 'success', 3000);
     };
     const ungroup = () => dispatch({ type: 'UPDATE_OBJECTS', updates: objs.map((o) => ({ id: o.id, changes: { groupId: undefined } })) });
+    // ilk ve son nesne yerinde kalır, aradakiler aralar eşit olacak şekilde yerleşir
+    const distribute = (axis) => {
+        const W = axis === 'x' ? 'w' : 'h';
+        const order = free.map((o, i) => ({ o, b: bs[i] })).sort((p, q) => (p.b[axis] + p.b[W] / 2) - (q.b[axis] + q.b[W] / 2));
+        const first = order[0].b, last = order[order.length - 1].b;
+        const gap = (last[axis] + last[W] - first[axis] - order.reduce((n, p) => n + p.b[W], 0)) / (order.length - 1);
+        let at = first[axis];
+        dispatch({
+            type: 'UPDATE_OBJECTS',
+            updates: order.map(({ o, b }) => {
+                const d = at - b[axis];
+                at += b[W] + gap;
+                return { id: o.id, changes: axis === 'x' ? moveBy(o, d, 0) : moveBy(o, 0, d) };
+            }),
+        });
+    };
+    // Logo şeridi: döndürülmemiş görseller ortanca yüksekliğe ölçeklenir, ortak yatay eksene oturur, soldan sağa eşit aralıkla dizilir
+    const logoStrip = () => {
+        const sizable = (o) => o.type === 'image' && !o.rotation;
+        const imgs = free.filter(sizable).map((o) => o.h).sort((a, b) => a - b);
+        const page = state.doc.pages.find((p) => p.id === pageId);
+        const n = free.length;
+        const measure = (H) => {
+            const items = free.map((o, i) => {
+                const b = bs[i], k = sizable(o) ? H / o.h : 1;
+                return { o, b, k, w: b.w * k, h: b.h * k, cx: b.x + b.w / 2 };
+            }).sort((p, q) => p.cx - q.cx);
+            return { items, total: items.reduce((s, p) => s + p.w, 0) };
+        };
+        let H = imgs[imgs.length >> 1];
+        let { items, total } = measure(H);
+        let gap = (box.x1 - box.x0 - total) / (n - 1);
+        if (gap < H * 0.3) gap = H * 0.5;
+        // şerit sayfaya sığmıyorsa (sayfa genişliğinin %90'ı) logolar orantılı küçülür
+        const maxW = page.width * 0.9;
+        if (total + gap * (n - 1) > maxW) {
+            const f = maxW / (total + gap * (n - 1));
+            H *= f; gap *= f;
+            ({ items, total } = measure(H));
+        }
+        const width = total + gap * (n - 1);
+        let at = gap === (box.x1 - box.x0 - total) / (n - 1) ? box.x0 : (box.x0 + box.x1) / 2 - width / 2;
+        at = Math.max(page.width * 0.05, Math.min(at, page.width * 0.95 - width));
+        const cy = items.reduce((s, p) => s + p.b.y + p.b.h / 2, 0) / n;
+        dispatch({
+            type: 'UPDATE_OBJECTS',
+            updates: items.map((p) => {
+                const x = at;
+                at += p.w + gap;
+                if (p.k !== 1) return { id: p.o.id, changes: { x, y: cy - p.h / 2, w: p.w, h: p.h } };
+                return { id: p.o.id, changes: moveBy(p.o, x - p.b.x, cy - p.h / 2 - p.b.y) };
+            }),
+        });
+    };
     const ALIGN = [
         ['left', AlignStartVertical, 'Sola hizala'], ['hcenter', AlignCenterVertical, 'Yatayda ortala'], ['right', AlignEndVertical, 'Sağa hizala'],
         ['top', AlignStartHorizontal, 'Üste hizala'], ['vcenter', AlignCenterHorizontal, 'Dikeyde ortala'], ['bottom', AlignEndHorizontal, 'Alta hizala'],
@@ -206,6 +262,20 @@ function MultiPanel({ pageId, ids }) {
                         ))}
                     </div>
                 </Field>
+            )}
+            {free.length > 2 && (
+                <Field label={t('Eşit aralıkla dağıt')}>
+                    <div className="grid grid-cols-2 gap-1.5">
+                        <Button size="sm" icon={AlignHorizontalSpaceAround} onClick={() => distribute('x')}>{t('Yatay')}</Button>
+                        <Button size="sm" icon={AlignVerticalSpaceAround} onClick={() => distribute('y')}>{t('Dikey')}</Button>
+                    </div>
+                </Field>
+            )}
+            {free.length > 1 && free.some((o) => o.type === 'image') && (
+                <>
+                    <Button icon={Rows3} className="w-full" onClick={logoStrip}>{t('Logo şeridi yap')}</Button>
+                    <p className="text-xs text-fg-3 leading-relaxed -mt-1">{t('Logolar aynı yüksekliğe gelir, aynı hizaya oturur ve eşit aralıkla dizilir.')}</p>
+                </>
             )}
             <Button variant="danger" icon={Trash2} className="w-full" onClick={() => dispatch({ type: 'REMOVE_OBJECTS', ids })}>{t('Hepsini sil')}</Button>
         </Section>
@@ -301,6 +371,7 @@ function ObjectPanel({ o, pageId }) {
                             <>
                                 {!o.signature && <Button variant="primary" icon={Layers} onClick={() => runMagicLayersOnObject(ed, o.id)}>{t('Sihirli Katmanlar')}</Button>}
                                 <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: o.id } })}>{t('Arka planı kaldır')}</Button>
+                                {!o.signature && <LogoTools o={o} update={update} />}
                             </>
                         )}
                     </>
@@ -321,6 +392,38 @@ function ObjectPanel({ o, pageId }) {
                 </div>
             </Section>
         </>
+    );
+}
+
+/** Logo araçları: tek tıkla düz zemini silme, boş kenarları kırpma ve tek renge boyama (anında, model yok) */
+function LogoTools({ o, update }) {
+    const kit = useBrandKit();
+    const [busy, setBusy] = useState(false);
+    const run = async (op, hex) => {
+        setBusy(true);
+        try {
+            const changes = await logoEdit(o, op, hex);
+            if (!changes) toast(t('Kırpılacak boş kenar yok'), 'info', 2500);
+            else update(op === 'tint' ? (o.origSrc ? changes : { ...changes, origSrc: o.src }) : { ...changes, origSrc: undefined });
+        } catch (e) { toast(t(e.message), 'info', 4500); }
+        setBusy(false);
+    };
+    const colors = [...new Set(['#ffffff', '#000000', ...kit.colors.map((c) => c.hex.toLowerCase())])].slice(0, 9);
+    return (
+        <Field label={t('Logo')} hint={t('Beyaz zeminli logoyu koyu afişe koyarken zemini silin; koyu afişte okunmayan logoyu beyaz yapın.')}>
+            <div className="grid grid-cols-2 gap-1.5">
+                <Button size="sm" icon={Eraser} disabled={busy} onClick={() => run('bg')}>{t('Düz zemini sil')}</Button>
+                <Button size="sm" icon={Crop} disabled={busy} onClick={() => run('trim')}>{t('Boşlukları kırp')}</Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-fg-3 inline-flex items-center gap-1 mr-0.5"><Paintbrush className="w-3.5 h-3.5" />{t('Tek renk')}</span>
+                {colors.map((hex) => (
+                    <button key={hex} type="button" disabled={busy} title={hex} aria-label={hex} onClick={() => run('tint', hex)}
+                        className="w-6 h-6 rounded-full border border-line-strong transition-transform hover:scale-110" style={{ background: hex }} />
+                ))}
+                {o.origSrc && <Button size="sm" variant="ghost" onClick={() => update({ src: o.origSrc, origSrc: undefined })}>{t('Orijinal renk')}</Button>}
+            </div>
+        </Field>
     );
 }
 

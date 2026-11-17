@@ -4,6 +4,9 @@ import { download } from '../store/actions';
 import { newId } from '../core/pageOps';
 import { TOOL_BY_KEY } from './tools';
 import { moveBy } from './objects';
+import { readImageFile } from './imageFiles';
+import { toast } from '../components/Toaster';
+import { t } from '../i18n';
 import TopBar from './TopBar';
 import ToolRail from './ToolRail';
 import PagesPanel from './PagesPanel';
@@ -12,7 +15,7 @@ import Inspector from './Inspector';
 import BusyOverlay from './BusyOverlay';
 import Dialogs from './dialogs/Dialogs';
 
-let clipboard = null;
+let clipboard = null; // kopyalanan nesneler (dizi)
 
 export default function Editor() {
     const ed = useEditor();
@@ -46,6 +49,13 @@ export default function Editor() {
             const multi = s.selected?.ids?.length > 1 ? s.selected.ids : null;
             if (multi) {
                 if (key === 'delete' || key === 'backspace') { e.preventDefault(); dispatch({ type: 'REMOVE_OBJECTS', ids: multi }); return; }
+                if (mod && (key === 'c' || key === 'd')) {
+                    const list = (s.objects[s.selected.pageId] || []).filter((o) => multi.includes(o.id));
+                    if (key === 'c') { copyObjects(list); return; }
+                    e.preventDefault();
+                    pasteObjects(ed, list, 12);
+                    return;
+                }
                 if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(key)) {
                     e.preventDefault();
                     const d = e.shiftKey ? 10 : 1;
@@ -64,7 +74,7 @@ export default function Editor() {
                     dispatch({ type: 'ADD_OBJECT', pageId: sel.pageId, obj: offsetCopy(sel.obj, 12) });
                     return;
                 }
-                if (mod && key === 'c') { clipboard = { ...sel.obj }; return; }
+                if (mod && key === 'c') { copyObjects([sel.obj]); return; }
                 if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown'].includes(key)) {
                     e.preventDefault();
                     const d = e.shiftKey ? 10 : 1;
@@ -73,12 +83,6 @@ export default function Editor() {
                     dispatch({ type: 'UPDATE_OBJECT', id: sel.obj.id, changes: moveBy(sel.obj, dx, dy) });
                     return;
                 }
-            }
-            if (mod && key === 'v' && clipboard) {
-                const page = s.doc.pages[s.page];
-                dispatch({ type: 'ADD_OBJECT', pageId: page.id, obj: offsetCopy(clipboard, 16) });
-                clipboard = offsetCopy(clipboard, 16);
-                return;
             }
             if (key === 'escape') {
                 if (s.selected || s.editing) dispatch({ type: 'SET', values: { selected: null, editing: null } });
@@ -91,12 +95,40 @@ export default function Editor() {
             }
             if (key === '?') dispatch({ type: 'SET', values: { dialog: 'shortcuts' } });
         };
+        // Yapıştır: panoda görsel varsa (tarayıcıdan/klasörden kopyalanan logo) sayfaya eklenir, yoksa kopyalanan nesneler
+        const onPaste = (e) => {
+            const s = ed.get();
+            const el = document.activeElement;
+            if (s.dialog || s.busy || (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable))) return;
+            const files = [...(e.clipboardData?.files || [])].filter((f) => f.type.startsWith('image/'));
+            if (files.length) { e.preventDefault(); addImages(ed, files); return; }
+            if (clipboard) { e.preventDefault(); pasteObjects(ed, clipboard, 16); clipboard = clipboard.map((o) => ({ ...o, ...moveBy(o, 16, 16) })); }
+        };
         window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
+        window.addEventListener('paste', onPaste);
+        return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('paste', onPaste); };
     }, [ed, dispatch]);
 
+    // Görsel dosyasını pencereye sürükleyip bırakmak: sayfaya eklenir
+    const [drop, setDrop] = useState(false);
+    const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+
     return (
-        <div className="h-full flex flex-col bg-bg">
+        <div className="h-full flex flex-col bg-bg relative"
+            onDragOver={(e) => { if (hasFiles(e)) { e.preventDefault(); setDrop(true); } }}
+            onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) setDrop(false); }}
+            onDrop={(e) => {
+                if (!hasFiles(e)) return;
+                e.preventDefault(); setDrop(false);
+                const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith('image/'));
+                if (files.length) addImages(ed, files);
+                else toast(t('Sayfaya yalnızca görsel (PNG, JPG, SVG) bırakılabilir'), 'info', 3500);
+            }}>
+            {drop && (
+                <div className="absolute inset-0 z-50 pointer-events-none bg-accent/10 border-4 border-dashed border-accent rounded-xl flex items-center justify-center">
+                    <span className="px-4 py-2 rounded-xl bg-surface shadow-lg text-sm font-semibold">{t('Bırakın, sayfaya eklensin')}</span>
+                </div>
+            )}
             <TopBar pagesOpen={pagesOpen} onTogglePages={() => setPagesOpen((o) => !o)} />
             <div className="flex-1 min-h-0 flex">
                 <ToolRail />
@@ -112,4 +144,46 @@ export default function Editor() {
 
 function offsetCopy(o, d) {
     return { ...o, ...moveBy(o, d, d), id: newId('ob') };
+}
+
+function copyObjects(list) {
+    clipboard = list.map((o) => ({ ...o }));
+    // sistem panosunda eski bir görsel kalmışsa yapıştırınca o gelmesin
+    navigator.clipboard?.writeText?.(' ').catch(() => {});
+}
+
+/** Nesneleri kaydırarak kopyalar; gruplar kopyada da grup kalır (yeni grup kimliğiyle), kopyalar seçili olur */
+function pasteObjects(ed, list, d) {
+    const s = ed.get();
+    const pageId = s.doc.pages[s.page].id;
+    const gids = new Map();
+    const objs = list.map((o) => {
+        const q = offsetCopy(o, d);
+        if (o.groupId) { if (!gids.has(o.groupId)) gids.set(o.groupId, newId('gp')); q.groupId = gids.get(o.groupId); }
+        return q;
+    });
+    ed.dispatch({ type: 'COMMIT', bytes: s.doc.bytes, objects: { ...s.objects, [pageId]: [...(s.objects[pageId] || []), ...objs] } });
+    ed.dispatch({ type: 'SET_TOOL', tool: 'select' });
+    ed.dispatch({ type: 'SET', values: { selected: { pageId, id: objs[objs.length - 1].id, ids: objs.length > 1 ? objs.map((o) => o.id) : undefined } } });
+}
+
+/** Görsel dosyalarını sayfanın ortasına ekler (birden çoksa yan yana kaydırarak); en uzun kenarı sayfanın ~%30'u */
+async function addImages(ed, files) {
+    const s = ed.get();
+    const page = s.doc.pages[s.page];
+    const objs = [];
+    for (const [i, f] of files.entries()) {
+        try {
+            const img = await readImageFile(f);
+            const k = Math.min(1, (Math.min(page.width, page.height) * 0.3) / Math.max(img.w, img.h));
+            const w = img.w * k, h = img.h * k;
+            objs.push({ id: newId('ob'), type: 'image', x: (page.width - w) / 2 + i * 24, y: (page.height - h) / 2 + i * 24, w, h, src: img.src, opacity: 1, name: f.name ? f.name.replace(/\.[^.]+$/, '') : t('Görsel') });
+        } catch { toast(`${f.name || t('Görsel')}: ${t('açılamadı')}`, 'error'); }
+    }
+    if (!objs.length) return;
+    const cur = ed.get();
+    ed.dispatch({ type: 'COMMIT', bytes: cur.doc.bytes, objects: { ...cur.objects, [page.id]: [...(cur.objects[page.id] || []), ...objs] } });
+    ed.dispatch({ type: 'SET_TOOL', tool: 'select' });
+    ed.dispatch({ type: 'SET', values: { selected: { pageId: page.id, id: objs[objs.length - 1].id, ids: objs.length > 1 ? objs.map((o) => o.id) : undefined } } });
+    toast(objs.length > 1 ? `${objs.length} ${t('görsel eklendi')}` : t('Görsel eklendi'), 'success', 2500);
 }

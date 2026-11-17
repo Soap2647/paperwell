@@ -31,9 +31,11 @@ async function embedImage(doc, src) {
         const img = new Image();
         img.src = src;
         await img.decode();
+        // SVG'nin kendi boyutu çoğu zaman küçüktür (ör. 120 px): vektör olduğu için net olsun diye büyük rasterlenir
+        const k = /image\/svg/.test(src.slice(0, 40)) ? 2000 / Math.max(img.naturalWidth || 300, img.naturalHeight || 150) : 1;
         const c = document.createElement('canvas');
-        c.width = img.naturalWidth; c.height = img.naturalHeight;
-        c.getContext('2d').drawImage(img, 0, 0);
+        c.width = Math.round((img.naturalWidth || 300) * k); c.height = Math.round((img.naturalHeight || 150) * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
         ({ bytes } = dataUrlBytes(c.toDataURL('image/png')));
         mime = 'image/png';
     }

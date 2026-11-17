@@ -3,7 +3,7 @@ import { PDFDocument, rgb } from 'pdf-lib';
 import { readPages, rebuildPages, rotateObjects, cloneObjects, newId, resizePdfPage } from '../core/pageOps';
 import { resizeTransform, scaleObjects, scaleRects, exportSize } from '../core/pageSize';
 import { exportPdf } from '../core/export';
-import { renderPageToCanvas, releasePdfjsDoc } from '../core/render';
+import { renderPageToCanvas, renderPageSharp, releasePdfjsDoc } from '../core/render';
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import { saveFile, isDesktop } from '../platform';
@@ -182,7 +182,7 @@ export async function exportPng(ed) {
         const out = await buildOutputPdf(ed);
         const page = s.doc.pages[s.page];
         const target = exportSize(page.width, page.height, s.doc.pixelSize);
-        let canvas = await renderPageToCanvas(out, s.page, target.scale, '#fff');
+        let canvas = await renderPageSharp(out, s.page, target.scale, '#fff');
         if (canvas.width !== target.w || canvas.height !== target.h) {
             // yuvarlama farkı: tam piksel boyutuna getir
             const c = document.createElement('canvas');
@@ -216,6 +216,22 @@ export async function buildOutputPdf(ed) {
 }
 
 /**
+ * Görsel belgeyi piksel olarak çizer: görselin kendisi birebir (yeniden örneklenmeden) çizilir, eklenen
+ * logo ve yazılar ayrı bir katmanda süper örneklenip üstüne konur; böylece hem görsel bozulmaz hem logolar net kalır.
+ */
+async function renderImageDoc(s, k) {
+    const page = s.doc.pages[0], bg = s.doc.mime === 'image/jpeg' ? '#fff' : 'transparent';
+    if (page.rotate) return renderPageSharp(await exportPdf(s.doc.bytes, s.doc.pages, s.objects), 0, k, bg);
+    const canvas = await renderPageToCanvas(s.doc.bytes, 0, k, bg);
+    if (!s.objects[page.id]?.length) return canvas;
+    const blank = await PDFDocument.create();
+    blank.addPage([page.width, page.height]);
+    const layer = await exportPdf(await blank.save(), s.doc.pages, s.objects);
+    canvas.getContext('2d').drawImage(await renderPageSharp(layer, 0, k, 'transparent'), 0, 0, canvas.width, canvas.height);
+    return canvas;
+}
+
+/**
  * Kaydet / indir. Masaüstünde açılan PDF'in üzerine kaydeder (saveAs ile farklı kaydet);
  * web'de indirir. Görseller her zaman yeni dosyaya kaydedilir.
  */
@@ -223,16 +239,16 @@ export async function download(ed, { saveAs = false, scale = 1 } = {}) {
     const s = ed.get();
     if (!s.doc) return;
     await withBusy(ed, t('İşleniyor...'), async () => {
-        const out = await buildOutputPdf(ed);
         let saved;
         if (s.doc.kind === 'image') {
             // scale > 1: görsel büyütülür, eklenen logo/yazılar kendi çözünürlüklerinden net çizilir
             const k = ((s.doc.imageSize?.w || s.doc.pages[0].width) / s.doc.pages[0].width) * scale;
-            const canvas = await renderPageToCanvas(out, 0, k, s.doc.mime === 'image/jpeg' ? '#fff' : 'transparent');
+            const canvas = await renderImageDoc(s, k);
             const jpeg = s.doc.mime === 'image/jpeg';
             const blob = await new Promise((r) => canvas.toBlob(r, jpeg ? 'image/jpeg' : 'image/png', 0.95));
             saved = await saveFile(blob, `${baseName(s.doc.name)}-paperwell${scale > 1 ? `-${scale}x` : ''}.${jpeg ? 'jpg' : 'png'}`);
         } else {
+            const out = await buildOutputPdf(ed);
             const usePath = isDesktop && !saveAs && s.doc.path ? s.doc.path : undefined;
             saved = await saveFile(out, `${baseName(s.doc.name)}.pdf`, { path: usePath });
             if (saved && typeof saved === 'string') {
