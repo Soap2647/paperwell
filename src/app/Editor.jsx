@@ -15,6 +15,7 @@ import Canvas from './Canvas';
 import Inspector from './Inspector';
 import BusyOverlay from './BusyOverlay';
 import Dialogs from './dialogs/Dialogs';
+import { GeneralTour } from './Tour';
 
 let clipboard = null; // kopyalanan nesneler (dizi)
 
@@ -144,6 +145,7 @@ export default function Editor() {
                 <Inspector />
             </div>
             {state.busy && <BusyOverlay busy={state.busy} />}
+            <GeneralTour />
             <Dialogs />
         </div>
     );

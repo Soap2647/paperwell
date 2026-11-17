@@ -25,6 +25,7 @@ import { TOOLS } from './tools';
 import LayersPanel from './LayersPanel';
 import BrandPanel from './BrandPanel';
 import InsertPanel from './InsertPanel';
+import { ToolIntro } from './Tour';
 import FixAllPanel from './FixAllPanel';
 import { fixFindTexts } from './fixActions';
 import { runMagicLayers, runMagicLayersOnObject } from './magicLayersAction';
@@ -888,8 +889,9 @@ export default function Inspector() {
     else content = <ToolPanel tool={state.tool} />;
 
     return (
-        <aside data-inspector className="w-[272px] shrink-0 bg-surface border-l border-line overflow-y-auto scroll-thin hidden lg:block">
+        <aside data-inspector data-tour="inspector" className="w-[272px] shrink-0 bg-surface border-l border-line overflow-y-auto scroll-thin hidden lg:block">
             <div className="h-10 px-4 flex items-center border-b border-line text-xs font-semibold text-fg-2">{t('Özellikler')}</div>
+            {!editing && !sel && !(state.selected?.ids?.length > 1) && <ToolIntro tool={state.tool} />}
             {content}
             {state.tool === 'select' && <LayersPanel />}
         </aside>

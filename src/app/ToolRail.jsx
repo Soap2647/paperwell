@@ -18,7 +18,7 @@ export default function ToolRail() {
     };
 
     return (
-        <nav className="w-[68px] shrink-0 bg-surface border-r border-line flex flex-col items-center py-2 gap-0.5 overflow-y-auto scroll-thin" aria-label="Araçlar">
+        <nav data-tour="rail" className="w-[68px] shrink-0 bg-surface border-r border-line flex flex-col items-center py-2 gap-0.5 overflow-y-auto scroll-thin" aria-label="Araçlar">
             {TOOLS.map((tool, i) => {
                 const active = state.tool === tool.id;
                 return (
@@ -28,6 +28,7 @@ export default function ToolRail() {
                             <button
                                 type="button"
                                 onClick={() => pick(tool.id)}
+                                data-tour={`tool-${tool.id}`}
                                 aria-pressed={active}
                                 aria-label={t(tool.label)}
                                 className={cx(

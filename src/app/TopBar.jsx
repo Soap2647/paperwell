@@ -1,10 +1,11 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles, Images,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles, Images, Lightbulb,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { download, exportPng, saveProject, upscaleImageDoc } from '../store/actions';
 import { clearRecovery } from './recovery';
+import { resetTour } from './tourData';
 import { runMagicLayers } from './magicLayersAction';
 import { isDesktop } from '../platform';
 import { t, getLocale, setLocale } from '../i18n';
@@ -58,6 +59,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
         { label: t('Projeyi farklı kaydet…'), icon: FolderDown, onClick: () => saveProject(ed, { saveAs: true }) },
         { label: t('Farklı kaydet'), icon: Download, onClick: () => download(ed, { saveAs: true }), shortcut: 'Ctrl+Shift+S' },
         { label: t('Klavye kısayolları'), icon: Keyboard, onClick: () => open('shortcuts'), shortcut: '?' },
+        { label: t('Turu yeniden başlat'), icon: Lightbulb, onClick: () => resetTour() },
         '-',
         { header: t('Tema') },
         { label: t('Açık'), icon: Sun, checked: theme === 'light', onClick: () => setTheme('light') },
@@ -109,7 +111,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                 <IconButton size="sm" icon={Ruler} label={t('Cetveller')} shortcut="Ctrl+R" active={state.rulers} onClick={() => dispatch({ type: 'SET', values: { rulers: !state.rulers } })} />
                 {state.dirty && (
                     // basılı tutunca ilk hal görünür, bırakınca son hal
-                    <IconButton size="sm" icon={SplitSquareHorizontal} label={t('Önce / sonra (basılı tutun)')} active={!!state.compare}
+                    <IconButton size="sm" data-tour="compare" icon={SplitSquareHorizontal} label={t('Önce / sonra (basılı tutun)')} active={!!state.compare}
                         onPointerDown={(e) => { e.currentTarget.setPointerCapture?.(e.pointerId); dispatch({ type: 'SET', values: { compare: true } }); }}
                         onPointerUp={() => dispatch({ type: 'SET', values: { compare: false } })}
                         onPointerCancel={() => dispatch({ type: 'SET', values: { compare: false } })} />
@@ -122,10 +124,10 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                 ) : (
                     <IconButton icon={Search} label={t('Bul ve değiştir')} shortcut="Ctrl+F" onClick={() => dispatch({ type: 'SET', values: { search: { query: '', results: [], index: 0 } } })} />
                 )}
-                <Menu trigger={<span><Tooltip label={t('Belge araçları')}><Button variant="ghost" icon={Wrench} className="hidden lg:inline-flex">{t('Belge araçları')}</Button></Tooltip><IconButton icon={Wrench} label={t('Belge araçları')} className="lg:hidden" /></span>} items={toolItems} align="right" />
+                <Menu trigger={<span data-tour="tools-menu"><Tooltip label={t('Belge araçları')}><Button variant="ghost" icon={Wrench} className="hidden lg:inline-flex">{t('Belge araçları')}</Button></Tooltip><IconButton icon={Wrench} label={t('Belge araçları')} className="lg:hidden" /></span>} items={toolItems} align="right" />
                 <IconButton icon={Printer} label={t('Yazdır')} shortcut="Ctrl+P" onClick={() => open('print')} />
                 <Menu trigger={<IconButton icon={MoreHorizontal} label="Menu" />} items={moreItems} align="right" />
-                <Button variant="primary" icon={Download} onClick={() => download(ed)} className="ml-1">
+                <Button variant="primary" data-tour="save" icon={Download} onClick={() => download(ed)} className="ml-1">
                     <span className="hidden sm:inline">{isImage ? t('PNG olarak indir') : isDesktop ? t('Kaydet') : t('İndir')}</span>
                 </Button>
                 <Menu trigger={<IconButton icon={ChevronDown} label={t('Dışa aktar')} size="sm" />} items={[
