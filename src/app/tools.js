@@ -1,4 +1,4 @@
-import { MousePointer2, TextCursorInput, Type, PenTool, Highlighter, Shapes, ImagePlus, Signature, Sparkles, SquareSlash, StickyNote, LassoSelect, BadgeCheck, WandSparkles } from 'lucide-react';
+import { MousePointer2, TextCursorInput, Type, PenTool, Highlighter, Shapes, ImagePlus, Signature, Sparkles, SquareSlash, StickyNote, LassoSelect, BadgeCheck, WandSparkles, QrCode } from 'lucide-react';
 
 export const TOOLS = [
     { id: 'select', label: 'Seç', hint: 'Nesneleri seç ve taşı', icon: MousePointer2, key: 'V' },
@@ -14,6 +14,7 @@ export const TOOLS = [
     { id: 'erase', label: 'Silgi', hint: 'Fırçayla boya, yok olsun', icon: Sparkles, key: 'B' },
     { id: 'grab', label: 'Nesne', hint: 'Tıklanan nesneyi ayrı katmana çıkar', icon: LassoSelect, key: 'O' },
     { id: 'brand', label: 'Marka', hint: 'Logolarım, marka renklerim ve fontum', icon: BadgeCheck, key: 'M' },
+    { id: 'insert', label: 'Ekle', hint: 'QR kod ve etkinlik bilgisi ekle', icon: QrCode, key: 'Q' },
     { id: 'redact', label: 'Karart', hint: 'Hassas bilgiyi kalıcı sil', icon: SquareSlash, key: 'K' },
 ];
 

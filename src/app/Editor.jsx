@@ -5,6 +5,7 @@ import { newId } from '../core/pageOps';
 import { TOOL_BY_KEY } from './tools';
 import { moveBy } from './objects';
 import { readImageFile } from './imageFiles';
+import { smartSpot } from './backdrop';
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import TopBar from './TopBar';
@@ -173,17 +174,19 @@ function pasteObjects(ed, list, d) {
     ed.dispatch({ type: 'SET', values: { selected: { pageId, id: objs[objs.length - 1].id, ids: objs.length > 1 ? objs.map((o) => o.id) : undefined } } });
 }
 
-/** Görsel dosyalarını sayfanın ortasına ekler (birden çoksa yan yana kaydırarak); en uzun kenarı sayfanın ~%30'u */
+/** Görsel dosyalarını sayfaya ekler: her biri afişin boş, sakin bir yerine; en uzun kenarı sayfanın ~%30'u */
 async function addImages(ed, files) {
     const s = ed.get();
     const page = s.doc.pages[s.page];
     const objs = [];
-    for (const [i, f] of files.entries()) {
+    for (const f of files) {
         try {
             const img = await readImageFile(f);
             const k = Math.min(1, (Math.min(page.width, page.height) * 0.3) / Math.max(img.w, img.h));
             const w = img.w * k, h = img.h * k;
-            objs.push({ id: newId('ob'), type: 'image', x: (page.width - w) / 2 + i * 24, y: (page.height - h) / 2 + i * 24, w, h, src: img.src, opacity: 1, name: f.name ? f.name.replace(/\.[^.]+$/, '') : t('Görsel') });
+            // afişin en sakin yerine (detayı az, başka öğeyle çakışmayan) yerleşir
+            const at = await smartSpot(s, w, h, objs);
+            objs.push({ id: newId('ob'), type: 'image', x: at.x, y: at.y, w, h, src: img.src, opacity: 1, name: f.name ? f.name.replace(/\.[^.]+$/, '') : t('Görsel') });
         } catch { toast(`${f.name || t('Görsel')}: ${t('açılamadı')}`, 'error'); }
     }
     if (!objs.length) return;

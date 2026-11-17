@@ -2,8 +2,9 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useEffect, useRef, useState, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Check } from 'lucide-react';
+import { X, Check, Pipette } from 'lucide-react';
 import { useBrandKit } from '../core/brandKit';
+import { t as tr } from '../i18n';
 
 export const cx = (...a) => a.filter(Boolean).join(' ');
 
@@ -172,7 +173,22 @@ export function ColorPicker({ value, onChange, allowNone, swatches }) {
             <label className="w-6 h-6 rounded-full border border-line-strong overflow-hidden cursor-pointer relative" title="Özel renk" style={{ background: 'conic-gradient(red, yellow, lime, cyan, blue, magenta, red)' }}>
                 <input type="color" value={value || '#000000'} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" />
             </label>
+            <EyeDropperButton onPick={onChange} />
         </div>
+    );
+}
+
+/** Damlalık: ekrandaki (afişteki) herhangi bir noktanın rengini alır. Tarayıcı desteklemiyorsa görünmez */
+export function EyeDropperButton({ onPick, className }) {
+    if (typeof window === 'undefined' || !('EyeDropper' in window)) return null;
+    const pick = async () => {
+        try { const r = await new window.EyeDropper().open(); onPick(r.sRGBHex.toLowerCase()); } catch { /* vazgeçildi */ }
+    };
+    return (
+        <button type="button" onClick={pick} title={tr('Afişten renk al (damlalık)')} aria-label={tr('Afişten renk al (damlalık)')}
+            className={cx('w-6 h-6 rounded-full border border-line-strong flex items-center justify-center text-fg-2 hover:text-fg hover:bg-surface-2', className)}>
+            <Pipette className="w-3.5 h-3.5" />
+        </button>
     );
 }
 

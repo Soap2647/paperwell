@@ -6,10 +6,11 @@ import { newId } from '../core/pageOps';
 import { addBrandAsset, removeBrandAsset, addBrandColor, removeBrandColor, exportBrandKit, importBrandKit, isBrandPersistent, useBrandKit, saveTemplate, removeTemplate } from '../core/brandKit';
 import { resizeTransform, scaleObjects } from '../core/pageSize';
 import { saveFile } from '../platform';
-import { Button, Field, cx } from '../components/ui';
+import { Button, Field, EyeDropperButton, cx } from '../components/ui';
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import FontPicker from './FontPicker';
+import { smartSpot } from './backdrop';
 
 /** Şablona girecek nesneler: sayfayı kaplayan büyük görseller (ana görsel) ve notlar/vurgular hariç */
 const templateObjects = (list, page) => (list || []).filter((o) => !['note', 'highlight'].includes(o.type)
@@ -29,10 +30,11 @@ export default function BrandPanel() {
             catch (e) { toast(t(e.message), 'error'); }
         }
     };
-    // Logoya tıklayınca sayfanın ortasına, sayfa genişliğinin ~%30'u kadar yerleşir
-    const place = (a) => {
+    // Logoya tıklayınca afişin boş, sakin bir yerine, sayfa genişliğinin ~%30'u kadar yerleşir
+    const place = async (a) => {
         const w = Math.min(page.width * 0.3, a.w * 0.75), h = (w * a.h) / a.w;
-        dispatch({ type: 'ADD_OBJECT', pageId: page.id, obj: { id: newId('ob'), type: 'image', x: (page.width - w) / 2, y: (page.height - h) / 2, w, h, src: a.src, opacity: 1, name: a.name } });
+        const at = await smartSpot(state, w, h);
+        dispatch({ type: 'ADD_OBJECT', pageId: page.id, obj: { id: newId('ob'), type: 'image', x: at.x, y: at.y, w, h, src: a.src, opacity: 1, name: a.name } });
         dispatch({ type: 'SET_TOOL', tool: 'select' });
     };
     // Renge tıklayınca seçili nesneye uygulanır (metin: yazı rengi, şekil: dolgu, çizgi: çizgi rengi)
@@ -115,6 +117,7 @@ export default function BrandPanel() {
                         <Plus className="w-3.5 h-3.5" />
                         <input type="color" defaultValue="#4285f4" onChange={(e) => addBrandColor(e.target.value)} className="absolute inset-0 opacity-0 cursor-pointer" />
                     </label>
+                    <EyeDropperButton onPick={(hex) => { addBrandColor(hex); toast(`${hex} ${t('marka renklerine eklendi')}`, 'success', 2500); }} className="!w-7 !h-7" />
                 </div>
             </Field>
 

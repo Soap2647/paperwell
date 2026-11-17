@@ -24,12 +24,15 @@ import { t } from '../i18n';
 import { TOOLS } from './tools';
 import LayersPanel from './LayersPanel';
 import BrandPanel from './BrandPanel';
+import InsertPanel from './InsertPanel';
 import FixAllPanel from './FixAllPanel';
 import { fixFindTexts } from './fixActions';
 import { runMagicLayers, runMagicLayersOnObject } from './magicLayersAction';
 import { readImageFile } from './imageFiles';
 import { logoEdit } from '../core/logoTools';
 import { effectCss } from '../core/textEffects';
+import { contrast, hexRgb } from '../core/placement';
+import { useBackdrop, sampleBackdrop } from './backdrop';
 import { useBrandKit } from '../core/brandKit';
 import { loadSignatures, saveSignatures } from './dialogs/SignatureDialog';
 
@@ -300,6 +303,7 @@ function ObjectPanel({ o, pageId }) {
     return (
         <>
             <Section title={titles[o.type]}>
+                {(o.type === 'text' || o.type === 'image') && <Readability o={o} update={update} />}
                 {o.type === 'text' && (
                     <>
                         <Field label={t('Font')}><FamilySelect value={o.family} onChange={(family) => update({ family })} /></Field>
@@ -459,6 +463,66 @@ function TextEffects({ o, update, live, checkpoint }) {
     );
 }
 
+// Logonun görünür piksellerinin ortalama rengi (okunabilirlik için; src başına bir kez hesaplanır)
+const logoColorCache = new Map();
+function logoColor(src) {
+    if (!logoColorCache.has(src)) {
+        logoColorCache.set(src, (async () => {
+            const img = new Image(); img.src = src; await img.decode();
+            const k = 64 / Math.max(img.naturalWidth, img.naturalHeight);
+            const c = document.createElement('canvas');
+            c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+            const g = c.getContext('2d'); g.drawImage(img, 0, 0, c.width, c.height);
+            const d = g.getImageData(0, 0, c.width, c.height).data, sum = [0, 0, 0];
+            let n = 0;
+            for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 128) { sum[0] += d[i]; sum[1] += d[i + 1]; sum[2] += d[i + 2]; n++; }
+            // saydamlığı olmayan (zeminli) görsel kendi zeminiyle okunur: denetlenmez
+            return n && n < (d.length / 4) * 0.97 ? sum.map((v) => v / n) : null;
+        })().catch(() => null));
+    }
+    return logoColorCache.get(src);
+}
+
+/**
+ * Okunabilirlik: yazı ya da logo zemininde kayboluyorsa uyarır ve tek tıkla düzeltme önerir.
+ * Eşikler: yazı için kontrast < 2.5, logo için < 1.6 (logolarda renk çeşitliliği ortalamayı yumuşatır).
+ */
+function Readability({ o, update }) {
+    const { state } = useEditor();
+    const bd = useBackdrop(state);
+    const [logoFg, setLogoFg] = useState(null);
+    const isLogo = o.type === 'image' && !o.qr && !o.signature && o.w * o.h < state.doc.pages[state.page].width * state.doc.pages[state.page].height * 0.6;
+    useEffect(() => { let live = true; if (isLogo) logoColor(o.src).then((c) => live && setLogoFg(c)); return () => { live = false; }; }, [isLogo, o.src]);
+    if (!bd) return null;
+    const bg = sampleBackdrop(bd, bbox(o));
+    let fg = null, limit = 2.5;
+    if (o.type === 'text') {
+        if (o.outline && contrast(hexRgb(o.outline.color), bg) >= 3) return null;
+        fg = o.gradient ? hexRgb(o.gradient.from).map((v, i) => (v + hexRgb(o.gradient.to)[i]) / 2) : hexRgb(o.color);
+    } else if (isLogo && logoFg) { fg = logoFg; limit = 1.6; }
+    if (!fg || contrast(fg, bg) >= limit) return null;
+    const light = contrast([255, 255, 255], bg) >= contrast([17, 24, 39], bg);
+    const best = light ? '#ffffff' : '#111827';
+    const fixText = (changes) => update({ ...changes, gradient: undefined });
+    const tint = async (hex) => { const ch = await logoEdit(o, 'tint', hex).catch(() => null); if (ch) update(o.origSrc ? ch : { ...ch, origSrc: o.src }); };
+    return (
+        <div className="rounded-xl border border-warning/40 bg-warning/10 p-2.5 space-y-2">
+            <p className="text-xs leading-relaxed"><b>{o.type === 'text' ? t('Bu yazı zeminde zor okunuyor.') : t('Bu logo zeminde kayboluyor.')}</b> {t('Tek tıkla düzeltin:')}</p>
+            <div className="flex flex-wrap gap-1.5">
+                {o.type === 'text' ? (
+                    <>
+                        <Button size="sm" onClick={() => fixText({ color: best })}>{light ? t('Beyaz yap') : t('Koyu yap')}</Button>
+                        <Button size="sm" onClick={() => update({ outline: { color: light ? '#111827' : '#ffffff', width: Math.max(1, o.size * 0.04) } })}>{t('Dış çizgi ekle')}</Button>
+                        <Button size="sm" onClick={() => update({ shadow: { color: light ? '#000000' : '#ffffff', opacity: 0.8, blur: o.size * 0.25, dist: 0 } })}>{t('Gölge ekle')}</Button>
+                    </>
+                ) : (
+                    <Button size="sm" onClick={() => tint(best)}>{light ? t('Beyaz yap') : t('Koyu yap')}</Button>
+                )}
+            </div>
+        </div>
+    );
+}
+
 /** Logo araçları: tek tıkla düz zemini silme, boş kenarları kırpma ve tek renge boyama (anında, model yok) */
 function LogoTools({ o, update }) {
     const kit = useBrandKit();
@@ -547,6 +611,7 @@ function ToolPanel({ tool }) {
             {tool === 'sign' && <SignToolPanel />}
             {tool === 'note' && <Field label={t('Renk')}><ColorPicker value={opts.color} swatches={['#facc15', '#fb923c', '#4ade80', '#60a5fa', '#f472b6', '#c084fc']} onChange={(color) => set({ color })} /></Field>}
             {tool === 'brand' && <BrandPanel />}
+            {tool === 'insert' && <InsertPanel />}
             {tool === 'fix' && state.fix?.step === 'all' && <FixAllPanel key={state.fix.items.length + ':' + state.fix.pageIndex} fix={state.fix} />}
             {tool === 'fix' && state.fix?.step !== 'all' && (
                 <div className="space-y-3 text-[13px] text-fg-2 leading-relaxed">

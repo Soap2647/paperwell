@@ -23,7 +23,7 @@ export default function ToolRail() {
                 const active = state.tool === tool.id;
                 return (
                     <div key={tool.id} className="w-full px-1.5">
-                        {(i === 3 || i === 10 || i === 12) && <div className="h-px bg-line mx-2 my-1.5" />}
+                        {(i === 3 || i === 10 || i === 12 || i === 14) && <div className="h-px bg-line mx-2 my-1.5" />}
                         <Tooltip label={t(tool.hint)} shortcut={tool.key} side="right">
                             <button
                                 type="button"
