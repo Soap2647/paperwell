@@ -3,8 +3,7 @@ import { useRef, useState } from 'react';
 import { Plus, Trash2, Download, Upload, LayoutTemplate } from 'lucide-react';
 import { useEditor, findObject } from '../store/editor';
 import { newId } from '../core/pageOps';
-import { addBrandAsset, removeBrandAsset, addBrandColor, removeBrandColor, exportBrandKit, importBrandKit, isBrandPersistent, useBrandKit, saveTemplate, removeTemplate } from '../core/brandKit';
-import { resizeTransform, scaleObjects } from '../core/pageSize';
+import { addBrandAsset, removeBrandAsset, addBrandColor, removeBrandColor, exportBrandKit, importBrandKit, isBrandPersistent, useBrandKit, saveTemplate, removeTemplate, templateToObjects } from '../core/brandKit';
 import { saveFile } from '../platform';
 import { Button, Field, EyeDropperButton, cx } from '../components/ui';
 import { toast } from '../components/Toaster';
@@ -54,13 +53,7 @@ export default function BrandPanel() {
         toast(`${name} ${t('kaydedildi')}`, 'success', 3000);
     };
     const applyTpl = (tpl) => {
-        const { k, dx, dy } = resizeTransform(tpl.width, tpl.height, page.width, page.height, true);
-        const gids = new Map();
-        const objs = scaleObjects(tpl.objects, k, dx, dy).map((o) => {
-            const q = { ...o, id: newId('ob') };
-            if (o.groupId) { if (!gids.has(o.groupId)) gids.set(o.groupId, newId('gp')); q.groupId = gids.get(o.groupId); }
-            return q;
-        });
+        const objs = templateToObjects(tpl, page);
         dispatch({ type: 'COMMIT', bytes: state.doc.bytes, objects: { ...state.objects, [page.id]: [...(state.objects[page.id] || []), ...objs] } });
         dispatch({ type: 'SET_TOOL', tool: 'select' });
         toast(`${tpl.name} ${t('uygulandı')} (${objs.length})`, 'success', 3000);

@@ -31,7 +31,7 @@ export async function withBusy(ed, label, fn) {
     }
 }
 
-async function imageToPdf(file) {
+export async function imageToPdf(file) {
     const url = URL.createObjectURL(file);
     try {
         const img = new Image();
@@ -329,7 +329,7 @@ export async function buildOutputPdf(ed) {
  * Görsel belgeyi piksel olarak çizer: görselin kendisi birebir (yeniden örneklenmeden) çizilir, eklenen
  * logo ve yazılar ayrı bir katmanda süper örneklenip üstüne konur; böylece hem görsel bozulmaz hem logolar net kalır.
  */
-async function renderImageDoc(s, k) {
+export async function renderImageDoc(s, k) {
     const page = s.doc.pages[0], bg = s.doc.mime === 'image/jpeg' ? '#fff' : 'transparent';
     if (page.rotate) return renderPageSharp(await exportPdf(s.doc.bytes, s.doc.pages, s.objects), 0, k, bg);
     const canvas = await renderPageToCanvas(s.doc.bytes, 0, k, bg);

@@ -1,6 +1,8 @@
 // Marka kiti: logolar ve marka renkleri bir kez eklenir, her açılışta hazır durur.
 // Logolar IndexedDB'de (büyük olabilir), renkler localStorage'da saklanır; ikisi de yoksa oturum boyunca bellekte tutulur.
 import { useSyncExternalStore } from 'react';
+import { resizeTransform, scaleObjects } from './pageSize';
+import { newId } from './pageOps';
 
 const DB = 'paperwell-brand', STORE = 'assets', TEMPLATES = 'templates', COLORS_KEY = 'paperwell.brand.colors';
 export const MAX_ASSET_BYTES = 8e6;
@@ -153,4 +155,18 @@ export async function importBrandKit(text) {
         assets++;
     }
     return { assets, colors };
+}
+
+/**
+ * Şablonun nesnelerini verilen sayfaya uyarlar: sayfa boyutu farklıysa orantılı sığdırılır, kimlikler ve
+ * grup kimlikleri yenilenir (aynı şablon bir sayfaya iki kez uygulanabilsin).
+ */
+export function templateToObjects(tpl, page) {
+    const { k, dx, dy } = resizeTransform(tpl.width, tpl.height, page.width, page.height, true);
+    const gids = new Map();
+    return scaleObjects(tpl.objects, k, dx, dy).map((o) => {
+        const q = { ...o, id: newId('ob') };
+        if (o.groupId) { if (!gids.has(o.groupId)) gids.set(o.groupId, newId('gp')); q.groupId = gids.get(o.groupId); }
+        return q;
+    });
 }

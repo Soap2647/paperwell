@@ -1,6 +1,6 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles, Images,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { download, exportPng, saveProject, upscaleImageDoc } from '../store/actions';
@@ -44,6 +44,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
         { label: t('Belge tarayıcı'), icon: ScanLine, onClick: () => open('scan') },
         { label: t('Boyutu değiştir…'), icon: Scaling, onClick: () => open('resize') },
         { label: t('Sosyal medyaya hazırla…'), icon: Share2, onClick: () => open('social') },
+        { label: t('Toplu işlem…'), icon: Images, onClick: () => open('batch') },
         { label: t('Arka planı kaldır'), icon: ImageMinus, onClick: () => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: null } }), disabled: !isImage },
         '-',
         { label: t('Dışa aktar'), icon: FileOutput, onClick: () => open('export') },

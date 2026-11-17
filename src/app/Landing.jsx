@@ -1,6 +1,6 @@
 // Başlangıç ekranı: boyut seçip yeni tasarıma başlamak, dosya açmak, son açılanlara dönmek
 import { useEffect, useRef, useState } from 'react';
-import { Upload, History, Combine, ScanLine, Moon, Sun, Languages, ShieldCheck, FileText, Image as ImageIcon, X, Ruler } from 'lucide-react';
+import { Upload, History, Images, Combine, ScanLine, Moon, Sun, Languages, ShieldCheck, FileText, Image as ImageIcon, X, Ruler } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { openFile, createBlank, restoreProject } from '../store/actions';
 import { loadRecovery, clearRecovery } from './recovery';
@@ -15,6 +15,7 @@ import Logo from './Logo';
 import MergeDialog from './dialogs/MergeDialog';
 import ScanDialog from './dialogs/ScanDialog';
 import NewDesignDialog from './dialogs/NewDesignDialog';
+import BatchDialog from './dialogs/BatchDialog';
 
 /** Boyut kutucuğu: gerçek en-boy oranında çerçeve, ad ve ölçü; tıklayınca o boyutta boş tasarım açılır */
 function SizeTile({ s, onClick }) {
@@ -39,6 +40,7 @@ export default function Landing() {
     const [mergeOpen, setMergeOpen] = useState(false);
     const [scanOpen, setScanOpen] = useState(false);
     const [newOpen, setNewOpen] = useState(false);
+    const [batchOpen, setBatchOpen] = useState(false);
     const recent = useRecent();
     const [rescue, setRescue] = useState(null);
     useEffect(() => { loadRecovery().then((r) => r && setRescue(r)); }, []);
@@ -103,6 +105,7 @@ export default function Landing() {
                     <div className="rounded-2xl border border-line bg-surface p-3 flex flex-col gap-1.5 justify-center">
                         <Button variant="ghost" icon={Combine} className="justify-start" onClick={() => setMergeOpen(true)}>{t('PDF birleştir')}</Button>
                         <Button variant="ghost" icon={ScanLine} className="justify-start" onClick={() => setScanOpen(true)}>{t('Belge tara')}</Button>
+                        <Button variant="ghost" icon={Images} className="justify-start" onClick={() => setBatchOpen(true)}>{t('Toplu işlem')}</Button>
                     </div>
                     <input ref={inputRef} type="file" accept="application/pdf,.pdf,image/png,image/jpeg,image/webp,image/gif,image/bmp,.paperwell" className="hidden"
                         onChange={(e) => { onFiles(e.target.files); e.target.value = ''; }} />
@@ -156,6 +159,7 @@ export default function Landing() {
             <MergeDialog open={mergeOpen} onClose={() => setMergeOpen(false)} standalone />
             <ScanDialog open={scanOpen} onClose={() => setScanOpen(false)} />
             <NewDesignDialog open={newOpen} onClose={() => setNewOpen(false)} />
+            <BatchDialog open={batchOpen} onClose={() => setBatchOpen(false)} />
             {drag && <div className="fixed inset-0 pointer-events-none border-4 border-dashed border-accent rounded-xl bg-accent/5" />}
         </div>
     );
