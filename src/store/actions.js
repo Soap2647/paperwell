@@ -7,6 +7,7 @@ import { renderPageToCanvas, renderPageSharp, releasePdfjsDoc } from '../core/re
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import { saveFile, isDesktop } from '../platform';
+import { addRecent, thumbOf } from '../app/recent';
 
 /** Web'de indirir, masaüstünde "Farklı kaydet" diyaloğu açar */
 export function downloadBlob(blob, name) {
@@ -86,7 +87,22 @@ export async function openFile(ed, file) {
         }
         const pages = await readPages(bytes);
         ed.dispatch({ type: 'LOAD', doc: { name: file.name, path: file.path || null, kind, bytes, pages, ...extra } });
+        rememberRecent(file, kind, bytes);
     });
+}
+
+/** Masaüstünde açılan dosyayı başlangıç ekranındaki "Son açılanlar"a ekler (küçük resmiyle) */
+async function rememberRecent(file, kind, bytes) {
+    if (!file.path) return;
+    let thumb = null;
+    if (kind === 'image') thumb = await thumbOf(file);
+    else {
+        try {
+            const c = await renderPageToCanvas(bytes, 0, 0.25, '#fff');
+            thumb = await thumbOf(await new Promise((r) => c.toBlob(r)));
+        } catch { /* küçük resimsiz */ }
+    }
+    addRecent({ path: file.path, name: file.name, kind, thumb });
 }
 
 const hexToRgb = (hex) => {

@@ -19,7 +19,7 @@ const MIME = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg
 const extOf = (name) => (name.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
 const baseOf = (path) => path.split(/[\\/]/).pop();
 
-async function pathToFile(path) {
+export async function pathToFile(path) {
     const { core } = await tauri();
     const buf = await core.invoke('read_file', { path });
     const file = new File([buf], baseOf(path), { type: MIME[extOf(path)] || 'application/octet-stream' });
