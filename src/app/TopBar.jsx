@@ -1,9 +1,10 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
-import { download, exportPng } from '../store/actions';
+import { download, exportPng, saveProject } from '../store/actions';
+import { clearRecovery } from './recovery';
 import { runMagicLayers } from './magicLayersAction';
 import { isDesktop } from '../platform';
 import { t, getLocale, setLocale } from '../i18n';
@@ -22,6 +23,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
 
     const closeDoc = () => {
         if (state.dirty && !window.confirm(t('Kaydedilmemiş değişiklikler var') + ' — ' + t('Yeni dosya') + '?')) return;
+        clearRecovery();
         dispatch({ type: 'CLOSE' });
     };
 
@@ -51,6 +53,8 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
     const moreItems = [
         { label: t('Yeni tasarım…'), icon: FilePlus2, onClick: newDesign },
         { label: t('Yeni dosya'), icon: FilePlus2, onClick: closeDoc },
+        { label: t('Projeyi kaydet (.paperwell)'), icon: FolderDown, onClick: () => saveProject(ed), shortcut: state.doc.projectPath ? 'Ctrl+S' : undefined },
+        { label: t('Projeyi farklı kaydet…'), icon: FolderDown, onClick: () => saveProject(ed, { saveAs: true }) },
         { label: t('Farklı kaydet'), icon: Download, onClick: () => download(ed, { saveAs: true }), shortcut: 'Ctrl+Shift+S' },
         { label: t('Klavye kısayolları'), icon: Keyboard, onClick: () => open('shortcuts'), shortcut: '?' },
         '-',
@@ -123,13 +127,16 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                 <Button variant="primary" icon={Download} onClick={() => download(ed)} className="ml-1">
                     <span className="hidden sm:inline">{isImage ? t('PNG olarak indir') : isDesktop ? t('Kaydet') : t('İndir')}</span>
                 </Button>
-                <Menu trigger={<IconButton icon={ChevronDown} label={t('Dışa aktar')} size="sm" />} items={isImage ? [
+                <Menu trigger={<IconButton icon={ChevronDown} label={t('Dışa aktar')} size="sm" />} items={[
+                    { label: t('Projeyi kaydet (sonra düzenlenebilir)'), icon: FolderDown, onClick: () => saveProject(ed) },
+                    '-',
+                    ...(isImage ? [
                     { label: t('Orijinal boyutta kaydet'), icon: FileImage, onClick: () => download(ed) },
                     { label: t('2 kat çözünürlükte kaydet (logolar daha net)'), icon: FileImage, onClick: () => download(ed, { scale: 2 }) },
                 ] : [
                     { label: t('PDF olarak indir'), icon: FileText, onClick: () => download(ed) },
                     { label: t('PNG görsel olarak indir'), icon: FileImage, onClick: () => exportPng(ed) },
-                ]} align="right" />
+                ])]} align="right" />
             </div>
         </header>
     );

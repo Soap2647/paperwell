@@ -15,7 +15,7 @@ async function tauri() {
     return mods;
 }
 
-const MIME = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp', zip: 'application/zip', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+const MIME = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', bmp: 'image/bmp', zip: 'application/zip', paperwell: 'application/x-paperwell', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
 const extOf = (name) => (name.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
 const baseOf = (path) => path.split(/[\\/]/).pop();
 
@@ -33,7 +33,7 @@ export async function pickFiles({ multiple = false, pdfOnly = false } = {}) {
     const { dialog } = await tauri();
     const filters = pdfOnly
         ? [{ name: 'PDF', extensions: ['pdf'] }]
-        : [{ name: 'PDF / Görsel', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'] }];
+        : [{ name: 'PDF / Görsel / Proje', extensions: ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'paperwell'] }];
     const res = await dialog.open({ multiple, filters });
     if (!res) return [];
     const paths = Array.isArray(res) ? res : [res];

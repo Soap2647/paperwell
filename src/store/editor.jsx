@@ -83,7 +83,7 @@ function reducer(s, a) {
     switch (a.type) {
         case 'LOAD':
             // original: açılıştaki hali (önce/sonra karşılaştırması için; geri alma geçmişi sınırlı olduğundan ayrıca tutulur)
-            return { ...initialState, opts: s.opts, doc: a.doc, objects: a.objects || {}, zoom: s.zoom, rulers: s.rulers, tool: 'select', loadId: Date.now(), original: { bytes: a.doc.bytes, pages: a.doc.pages } };
+            return { ...initialState, opts: s.opts, doc: a.doc, objects: a.objects || {}, redactions: a.redactions || {}, forms: a.forms || initialState.forms, dirty: !!a.dirty, zoom: s.zoom, rulers: s.rulers, tool: 'select', loadId: Date.now(), original: a.original || { bytes: a.doc.bytes, pages: a.doc.pages } };
         case 'CLOSE':
             return { ...initialState, opts: s.opts, rulers: s.rulers };
         case 'COMMIT': {

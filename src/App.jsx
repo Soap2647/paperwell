@@ -10,12 +10,14 @@ import { loadBrandKit } from './core/brandKit';
 import { useTheme } from './app/theme';
 import { openFile } from './store/actions';
 import { takeOpenedFiles, onOpenFiles, setWindowTitle } from './platform';
+import { useAutoRecovery } from './app/recovery';
 
 function Root() {
     const ed = useEditor();
     const { state } = ed;
     useLocale();
     useTheme();
+    useAutoRecovery(state);
 
     useEffect(() => { registerCssFonts(); loadStoredFonts(); loadBrandKit(); }, []);
 
@@ -33,9 +35,9 @@ function Root() {
 
     // Pencere başlığı
     useEffect(() => {
-        const name = state.doc?.name;
+        const name = state.doc?.projectName || state.doc?.name;
         setWindowTitle(name ? `${state.dirty ? '• ' : ''}${name} — Paperwell` : 'Paperwell');
-    }, [state.doc?.name, state.dirty]);
+    }, [state.doc?.name, state.doc?.projectName, state.dirty]);
 
     // Kaydedilmemiş değişiklik varken sekme kapatılırsa uyar
     useEffect(() => {

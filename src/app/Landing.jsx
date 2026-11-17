@@ -1,8 +1,9 @@
 // Başlangıç ekranı: boyut seçip yeni tasarıma başlamak, dosya açmak, son açılanlara dönmek
-import { useRef, useState } from 'react';
-import { Upload, Combine, ScanLine, Moon, Sun, Languages, ShieldCheck, FileText, Image as ImageIcon, X, Ruler } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Upload, History, Combine, ScanLine, Moon, Sun, Languages, ShieldCheck, FileText, Image as ImageIcon, X, Ruler } from 'lucide-react';
 import { useEditor } from '../store/editor';
-import { openFile, createBlank } from '../store/actions';
+import { openFile, createBlank, restoreProject } from '../store/actions';
+import { loadRecovery, clearRecovery } from './recovery';
 import { isDesktop, pickFiles, pathToFile } from '../platform';
 import { PRESET_GROUPS, sizeToPage, sizeLabel } from '../core/pageSize';
 import { t, getLocale, setLocale } from '../i18n';
@@ -39,6 +40,8 @@ export default function Landing() {
     const [scanOpen, setScanOpen] = useState(false);
     const [newOpen, setNewOpen] = useState(false);
     const recent = useRecent();
+    const [rescue, setRescue] = useState(null);
+    useEffect(() => { loadRecovery().then((r) => r && setRescue(r)); }, []);
     const theme = useTheme();
     const dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
 
@@ -76,6 +79,17 @@ export default function Landing() {
             </header>
 
             <main className="max-w-6xl mx-auto px-6 pt-4 pb-16 space-y-10">
+                {rescue && (
+                    <section className="rounded-2xl border border-warning/40 bg-warning/10 p-4 flex flex-wrap items-center gap-3">
+                        <History className="w-5 h-5 text-warning shrink-0" />
+                        <div className="flex-1 min-w-[200px]">
+                            <div className="text-[14px] font-semibold">{t('Kaldığınız yerden devam edin')}</div>
+                            <div className="text-[13px] text-fg-2">{rescue.name} · {t('kaydedilmemiş çalışma')} · {new Date(rescue.at).toLocaleString(getLocale() === 'tr' ? 'tr-TR' : 'en-US')}</div>
+                        </div>
+                        <Button variant="primary" onClick={() => restoreProject(ed, rescue.bytes)}>{t('Geri yükle')}</Button>
+                        <Button variant="ghost" onClick={() => { clearRecovery(); setRescue(null); }}>{t('Vazgeç')}</Button>
+                    </section>
+                )}
                 <section className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-4">
                     <button type="button" onClick={pick}
                         className={cx('rounded-2xl border-2 border-dashed p-6 flex items-center gap-5 text-left transition-all bg-surface',

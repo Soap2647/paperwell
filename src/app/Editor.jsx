@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useEditor, findObject } from '../store/editor';
-import { download } from '../store/actions';
+import { download, saveProject } from '../store/actions';
 import { newId } from '../core/pageOps';
 import { TOOL_BY_KEY } from './tools';
 import { moveBy } from './objects';
@@ -32,7 +32,13 @@ export default function Editor() {
             const key = e.key.toLowerCase();
             if (s.dialog || s.busy) return;
 
-            if (mod && key === 's') { e.preventDefault(); download(ed, { saveAs: e.shiftKey }); return; }
+            if (mod && key === 's') {
+                e.preventDefault();
+                // proje olarak açılan / kaydedilen belge: Ctrl+S projeyi günceller
+                if (s.doc.projectPath && !e.shiftKey) saveProject(ed);
+                else download(ed, { saveAs: e.shiftKey });
+                return;
+            }
             if (mod && key === 'p') { e.preventDefault(); dispatch({ type: 'SET', values: { dialog: 'print' } }); return; }
             if (mod && key === 'f') { e.preventDefault(); dispatch({ type: 'SET', values: { search: s.search || { query: '', results: [], index: 0 } } }); return; }
             if (typing) return;

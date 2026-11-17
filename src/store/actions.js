@@ -8,13 +8,14 @@ import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import { saveFile, isDesktop } from '../platform';
 import { addRecent, thumbOf } from '../app/recent';
+import { serializeProject, parseProject, isProjectFile, PROJECT_EXT } from '../core/project';
 
 /** Web'de indirir, masaüstünde "Farklı kaydet" diyaloğu açar */
 export function downloadBlob(blob, name) {
     return saveFile(blob, name);
 }
 
-export const baseName = (name = 'belge') => name.replace(/\.(pdf|png|jpe?g|webp|gif|bmp)$/i, '');
+export const baseName = (name = 'belge') => name.replace(/\.(pdf|png|jpe?g|webp|gif|bmp|paperwell)$/i, '');
 
 /** Uzun işlemi meşgul göstergesiyle çalıştırır */
 export async function withBusy(ed, label, fn) {
@@ -62,6 +63,7 @@ async function imageToPdf(file) {
 }
 
 export async function openFile(ed, file) {
+    if (isProjectFile(file)) { await openProject(ed, file); return; }
     const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
     const isImage = /^image\//.test(file.type);
     if (!isPdf && !isImage) {
@@ -88,6 +90,46 @@ export async function openFile(ed, file) {
         const pages = await readPages(bytes);
         ed.dispatch({ type: 'LOAD', doc: { name: file.name, path: file.path || null, kind, bytes, pages, ...extra } });
         rememberRecent(file, kind, bytes);
+    });
+}
+
+async function openProject(ed, file) {
+    await withBusy(ed, t('Yükleniyor...'), async () => {
+        const p = await parseProject(new Uint8Array(await file.arrayBuffer())).catch((e) => { throw new Error(t(e.message)); });
+        ed.dispatch({ type: 'LOAD', ...p, doc: { ...p.doc, path: null, projectPath: file.path || null, projectName: file.name } });
+        rememberRecent(file, 'project', p.doc.bytes);
+    });
+}
+
+/** Geri yüklenen (otomatik kurtarma) proje: kaydedilmemiş sayılır */
+export async function restoreProject(ed, bytes) {
+    await withBusy(ed, t('Yükleniyor...'), async () => {
+        const p = await parseProject(bytes);
+        ed.dispatch({ type: 'LOAD', ...p, dirty: true });
+    });
+}
+
+/**
+ * Projeyi (.paperwell) kaydeder: belge ve üstündeki logolar, yazılar düzenlenebilir kalır.
+ * Daha önce proje olarak kaydedildiyse aynı dosyanın üzerine yazar (saveAs: yeni yer sorar).
+ */
+export async function saveProject(ed, { saveAs = false } = {}) {
+    const s = ed.get();
+    if (!s.doc) return;
+    await withBusy(ed, t('Proje kaydediliyor...'), async () => {
+        const bytes = await serializeProject(s);
+        const name = s.doc.projectName || `${baseName(s.doc.name)}.${PROJECT_EXT}`;
+        const usePath = isDesktop && !saveAs && s.doc.projectPath ? s.doc.projectPath : undefined;
+        const saved = await saveFile(new Blob([bytes], { type: 'application/x-paperwell' }), name, { path: usePath });
+        if (!saved) return;
+        if (typeof saved === 'string') {
+            const projectName = saved.split(/[\\/]/).pop();
+            ed.dispatch({ type: 'SET', values: { doc: { ...ed.get().doc, projectPath: saved, projectName } } });
+            const c = await renderPageToCanvas(s.doc.bytes, 0, 0.25, '#fff').catch(() => null);
+            addRecent({ path: saved, name: projectName, kind: 'project', thumb: c && (await thumbOf(await new Promise((r) => c.toBlob(r)))) });
+        }
+        ed.dispatch({ type: 'SAVED' });
+        toast(t('Proje kaydedildi; açınca logolar ve yazılar düzenlenebilir'), 'success', 3500);
     });
 }
 
@@ -273,6 +315,11 @@ export async function download(ed, { saveAs = false, scale = 1 } = {}) {
             }
         }
         if (!saved) return;
+        // görsel düz PNG/JPG olarak yazıldı: eklenen logolar ve yazılar sonradan düzenlenebilsin diye proje dosyası hatırlatılır
+        if (s.doc.kind === 'image' && Object.values(s.objects).some((l) => l?.length) && !s.doc.projectPath) {
+            toast(t("Görsel kaydedildi. Logoları ve yazıları sonra da düzenlemek için menüden Projeyi kaydet'i kullanın."), 'success', 6000);
+            return;
+        }
         ed.dispatch({ type: 'SAVED' });
         toast(isDesktop ? t('Kaydedildi') : t('İndirildi'), 'success');
     });
