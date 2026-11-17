@@ -1,5 +1,6 @@
 // Katman nesneleri için geometri yardımcıları
 import { FONT_FAMILIES, effectiveWeight } from '../core/fonts';
+import { effectCss } from '../core/textEffects';
 
 export function bbox(o) {
     switch (o.type) {
@@ -66,6 +67,7 @@ export function textStyle(o) {
         textAlign: o.align || 'left',
         whiteSpace: 'pre',
         opacity: o.opacity ?? 1,
+        ...effectCss(o),
     };
 }
 

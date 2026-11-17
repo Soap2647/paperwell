@@ -8,6 +8,7 @@ import { pageGeometry } from './pdf/geometry';
 import { pageBox, pageRotation } from './pdf/pageModel';
 import { viewBoxToPdf } from './pdf/placement';
 import { embedFallbackFont } from './fonts';
+import { hasEffects, renderTextEffects } from './textEffects';
 
 export function hexToRgb01(hex = '#000000') {
     const h = hex.replace('#', '');
@@ -152,6 +153,17 @@ async function drawObject(doc, page, geom, o) {
             break;
         }
         case 'text': {
+            if (hasEffects(o) && typeof document !== 'undefined') {
+                // gölge / dış çizgi / degrade PDF metniyle birebir çizilemez: ekrandaki görünümle yüksek çözünürlükte basılır
+                const { canvas, pad } = await renderTextEffects(o, Math.min(6, 3000 / Math.max(o.w || 1, o.h || 1)));
+                const img = await doc.embedPng(dataUrlBytes(canvas.toDataURL('image/png')).bytes);
+                const box = { x: o.x - pad, y: o.y - pad, w: (o.w || 0) + pad * 2, h: (o.h || 0) + pad * 2 };
+                if (o.rotation) {
+                    const [px, py] = geom.pdfPoint(...rotator(o)(box.x, box.y + box.h));
+                    page.drawImage(img, { x: px, y: py, width: box.w, height: box.h, rotate: degrees(geom.rotate - o.rotation), opacity });
+                } else page.drawImage(img, { ...viewBoxToPdf(geom, box), opacity });
+                break;
+            }
             const font = await embedFallbackFont(doc, o.family, o.bold, o.italic, o.weight);
             const rot = rotator(o);
             const lh = o.lineHeight || 1.25;

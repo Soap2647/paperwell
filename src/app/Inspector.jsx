@@ -29,6 +29,7 @@ import { fixFindTexts } from './fixActions';
 import { runMagicLayers, runMagicLayersOnObject } from './magicLayersAction';
 import { readImageFile } from './imageFiles';
 import { logoEdit } from '../core/logoTools';
+import { effectCss } from '../core/textEffects';
 import { useBrandKit } from '../core/brandKit';
 import { loadSignatures, saveSignatures } from './dialogs/SignatureDialog';
 
@@ -307,6 +308,7 @@ function ObjectPanel({ o, pageId }) {
                             <StyleToggles bold={o.bold} italic={o.italic} onChange={(c) => update('bold' in c ? { ...c, weight: undefined } : c)} />
                         </div>
                         <WeightControl o={o} update={update} />
+                        <TextEffects o={o} update={update} live={live} checkpoint={checkpoint} />
                         <Field label={t('Hizalama')}>
                             <Segmented value={o.align || 'left'} onChange={(align) => update({ align })} options={[{ value: 'left', icon: AlignLeft }, { value: 'center', icon: AlignCenter }, { value: 'right', icon: AlignRight }]} />
                         </Field>
@@ -392,6 +394,68 @@ function ObjectPanel({ o, pageId }) {
                 </div>
             </Section>
         </>
+    );
+}
+
+// Hazır yazı stilleri: tek tıkla efekt seti (renk de değişebilir); "Sade" hepsini kaldırır
+const TEXT_PRESETS = [
+    { name: 'Sade', fx: { shadow: undefined, outline: undefined, gradient: undefined } },
+    { name: 'Gölgeli', fx: { shadow: { color: '#000000', opacity: 0.55, blur: 10, dist: 5 }, outline: undefined, gradient: undefined } },
+    { name: 'Çerçeveli', fx: { outline: { color: '#000000', width: 2.5 }, shadow: undefined, gradient: undefined } },
+    { name: 'Neon', fx: { color: '#ffffff', shadow: { color: '#22d3ee', opacity: 0.95, blur: 22, dist: 0 }, outline: undefined, gradient: undefined } },
+    { name: 'Altın', fx: { gradient: { from: '#fde68a', to: '#b45309', angle: 180 }, shadow: { color: '#000000', opacity: 0.45, blur: 6, dist: 3 }, outline: undefined } },
+    { name: 'Gökkuşağı', fx: { gradient: { from: '#60a5fa', to: '#c084fc', angle: 90 }, shadow: undefined, outline: undefined } },
+];
+
+/** Yazı efektleri: hazır stiller + gölge, dış çizgi, degrade ayarları */
+function TextEffects({ o, update, live, checkpoint }) {
+    const fx = (key, def) => (o[key] ? update({ [key]: undefined }) : update({ [key]: def }));
+    const sub = (key, changes) => live({ [key]: { ...o[key], ...changes } });
+    const chip = (key, label, def) => (
+        <button type="button" onClick={() => fx(key, def)} aria-pressed={!!o[key]}
+            className={cx('h-7 px-2.5 rounded-full border text-xs font-medium', o[key] ? 'border-accent bg-accent-soft text-fg' : 'border-line text-fg-2 hover:bg-surface-2')}>{label}</button>
+    );
+    return (
+        <Field label={t('Efektler')}>
+            <div className="grid grid-cols-3 gap-1.5">
+                {TEXT_PRESETS.map((p) => (
+                    <button key={p.name} type="button" onClick={() => update(p.fx)}
+                        className="h-11 rounded-lg border border-line bg-[#1e1b4b] hover:border-accent flex items-center justify-center overflow-hidden">
+                        <span style={{ fontFamily: 'inherit', fontWeight: 800, fontSize: 14, ...effectCss({ ...p.fx, color: p.fx.color || '#ffffff' }), color: p.fx.gradient ? 'transparent' : (p.fx.color || '#ffffff') }}>{t(p.name)}</span>
+                    </button>
+                ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+                {chip('shadow', t('Gölge'), { color: '#000000', opacity: 0.55, blur: 10, dist: 5 })}
+                {chip('outline', t('Dış çizgi'), { color: '#000000', width: 2 })}
+                {chip('gradient', t('Degrade'), { from: o.color || '#ffffff', to: '#7c3aed', angle: 180 })}
+            </div>
+            {o.shadow && (
+                <div className="space-y-2 rounded-lg border border-line p-2">
+                    <span className="text-xs font-medium text-fg-2">{t('Gölge')}</span>
+                    <ColorPicker value={o.shadow.color} onChange={(color) => update({ shadow: { ...o.shadow, color } })} />
+                    <Slider label={t('Yumuşaklık')} value={o.shadow.blur} min={0} max={40} onStart={checkpoint} onChange={(blur) => sub('shadow', { blur })} />
+                    <Slider label={t('Uzaklık')} value={o.shadow.dist} min={0} max={30} onStart={checkpoint} onChange={(dist) => sub('shadow', { dist })} />
+                    <Slider label={t('Koyuluk')} value={Math.round((o.shadow.opacity ?? 0.6) * 100)} min={10} max={100} unit="%" onStart={checkpoint} onChange={(v) => sub('shadow', { opacity: v / 100 })} />
+                </div>
+            )}
+            {o.outline && (
+                <div className="space-y-2 rounded-lg border border-line p-2">
+                    <span className="text-xs font-medium text-fg-2">{t('Dış çizgi')}</span>
+                    <ColorPicker value={o.outline.color} onChange={(color) => update({ outline: { ...o.outline, color } })} />
+                    <Slider label={t('Kalınlık')} value={o.outline.width} min={0.5} max={12} step={0.5} unit=" pt" onStart={checkpoint} onChange={(width) => sub('outline', { width })} />
+                </div>
+            )}
+            {o.gradient && (
+                <div className="space-y-2 rounded-lg border border-line p-2">
+                    <span className="text-xs font-medium text-fg-2">{t('Degrade')}</span>
+                    <ColorPicker value={o.gradient.from} onChange={(from) => update({ gradient: { ...o.gradient, from } })} />
+                    <ColorPicker value={o.gradient.to} onChange={(to) => update({ gradient: { ...o.gradient, to } })} />
+                    <Segmented value={o.gradient.angle ?? 180} onChange={(angle) => update({ gradient: { ...o.gradient, angle } })}
+                        options={[{ value: 180, label: '↓' }, { value: 90, label: '→' }, { value: 135, label: '↘' }, { value: 45, label: '↗' }]} />
+                </div>
+            )}
+        </Field>
     );
 }
 
