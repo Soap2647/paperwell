@@ -15,9 +15,10 @@ import RedactLayer from './layers/RedactLayer';
 import SearchLayer from './layers/SearchLayer';
 import FormLayer from './layers/FormLayer';
 import GuideLayer from './layers/GuideLayer';
+import { t } from '../i18n';
 
 function PageView({ page, index, zoom, scrollRoot }) {
-    const { state } = useEditor();
+    const { state, dispatch } = useEditor();
     const { tool, doc } = state;
     // önce/sonra: basılı tutulurken sayfanın açılıştaki hali gösterilir (nesneler gizlenir)
     const origIndex = state.compare && state.original ? state.original.pages.findIndex((p) => p.id === page.id) : -1;
@@ -117,7 +118,29 @@ function PageView({ page, index, zoom, scrollRoot }) {
                 {tool === 'grab' && <GrabLayer {...layerProps} />}
                 {tool === 'fix' && <FixLayer {...layerProps} />}
             </div>
+            {!state.compare && state.safeArea !== false && Math.abs(page.width / page.height - 9 / 16) < 0.01 && (
+                <StorySafeArea h={h} onHide={() => dispatch({ type: 'SET', values: { safeArea: false } })} />
+            )}
         </div>
+    );
+}
+
+/**
+ * Hikaye (9:16) güvenli alanı: Instagram/TikTok arayüzü üstte ~%14'ü (profil, ilerleme çubuğu) ve altta ~%20'yi
+ * (yanıt kutusu, düğmeler) kapatır. Önemli yazı ve logolar bu bantlara konmamalı. Yalnız ekranda; kaydedilmez.
+ */
+function StorySafeArea({ h, onHide }) {
+    const band = 'absolute inset-x-0 pointer-events-none bg-[repeating-linear-gradient(135deg,rgba(239,68,68,0.10)_0_8px,transparent_8px_16px)] border-red-500/60 border-dashed';
+    return (
+        <>
+            <div className={`${band} top-0 border-b`} style={{ height: h * 0.14 }} />
+            <div className={`${band} bottom-0 border-t`} style={{ height: h * 0.2 }} />
+            <button type="button" onClick={onHide} title={t('Gizle')}
+                className="absolute left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-red-600/85 text-white text-[11px] font-medium shadow whitespace-nowrap hover:bg-red-600"
+                style={{ top: h * 0.14 + 6 }}>
+                {t('Hikayede bu bantları uygulama kapatır · gizle')}
+            </button>
+        </>
     );
 }
 

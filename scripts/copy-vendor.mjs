@@ -1,4 +1,4 @@
-// OCR motoru ve dil verilerini public/ altına kopyalar (CDN yerine yerelden sunulsun diye).
+// OCR motoru, dil verileri ve yazım sözlüğünü public/ altına kopyalar (CDN yerine yerelden sunulsun diye).
 // "npm run dev" ve "npm run build" öncesinde otomatik çalışır.
 import fs from 'fs';
 import path from 'path';
@@ -16,4 +16,6 @@ for (const f of ['tesseract-core-lstm.wasm.js', 'tesseract-core-simd-lstm.wasm.j
 for (const lang of ['tur', 'eng']) {
     copy(`node_modules/@tesseract.js-data/${lang}/4.0.0_best_int/${lang}.traineddata.gz`, `${out}/lang/${lang}.traineddata.gz`);
 }
-console.log('vendor: tesseract kopyalandı');
+// Türkçe yazım sözlüğü (hunspell, MIT): yazım denetimi Worker'ı buradan yükler
+for (const f of ['index.aff', 'index.dic']) copy(`node_modules/dictionary-tr/${f}`, `public/dict/tr.${f.split('.')[1]}`);
+console.log('vendor: tesseract ve sözlük kopyalandı');

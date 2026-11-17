@@ -232,24 +232,45 @@ async function extendEdges(c, ix, iy, iw, ih) {
     ctx.putImageData(img, 0, 0);
 }
 
-/** Geçerli sayfayı PNG olarak indirir: piksel ön ayarlarında tam piksel boyutunda, diğerlerinde 2 kat (CSS px) */
-export async function exportPng(ed) {
+/** Geçerli sayfanın dışa aktarılacak tuvali: piksel ön ayarlarında tam piksel boyutunda, diğerlerinde 2 kat (CSS px) */
+export async function renderExportCanvas(ed) {
+    const s = ed.get();
+    const out = await buildOutputPdf(ed);
+    const page = s.doc.pages[s.page];
+    const target = exportSize(page.width, page.height, s.doc.pixelSize);
+    let canvas = await renderPageSharp(out, s.page, target.scale, '#fff');
+    if (canvas.width !== target.w || canvas.height !== target.h) {
+        // yuvarlama farkı: tam piksel boyutuna getir
+        const c = document.createElement('canvas');
+        c.width = target.w; c.height = target.h;
+        c.getContext('2d').drawImage(canvas, 0, 0, target.w, target.h);
+        canvas = c;
+    }
+    return canvas;
+}
+
+/**
+ * Tuvali dosyaya çevirir. 'jpg': paylaşım için küçük dosya; kalite 1 MB altına inene kadar düşürülür
+ * (WhatsApp ve Instagram bu boyutta yeniden sıkıştırmaz ya da az sıkıştırır).
+ * @returns {Promise<{blob: Blob, ext: string}>}
+ */
+export async function encodeCanvas(canvas, format = 'png') {
+    if (format !== 'jpg') return { blob: await new Promise((r) => canvas.toBlob(r, 'image/png')), ext: 'png' };
+    let q = 0.92, blob;
+    do {
+        blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', q));
+        q -= 0.08;
+    } while (blob.size > 1_000_000 && q >= 0.5);
+    return { blob, ext: 'jpg' };
+}
+
+/** Geçerli sayfayı görsel olarak indirir (PNG ya da paylaşım için küçük JPG) */
+export async function exportPng(ed, { format = 'png' } = {}) {
     const s = ed.get();
     if (!s.doc) return;
     await withBusy(ed, t('İşleniyor...'), async () => {
-        const out = await buildOutputPdf(ed);
-        const page = s.doc.pages[s.page];
-        const target = exportSize(page.width, page.height, s.doc.pixelSize);
-        let canvas = await renderPageSharp(out, s.page, target.scale, '#fff');
-        if (canvas.width !== target.w || canvas.height !== target.h) {
-            // yuvarlama farkı: tam piksel boyutuna getir
-            const c = document.createElement('canvas');
-            c.width = target.w; c.height = target.h;
-            c.getContext('2d').drawImage(canvas, 0, 0, target.w, target.h);
-            canvas = c;
-        }
-        const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
-        const saved = await saveFile(blob, `${baseName(s.doc.name)}.png`);
+        const { blob, ext } = await encodeCanvas(await renderExportCanvas(ed), format);
+        const saved = await saveFile(blob, `${baseName(s.doc.name)}.${ext}`);
         if (saved) toast(isDesktop ? t('Kaydedildi') : t('İndirildi'), 'success');
     });
 }
