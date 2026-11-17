@@ -11,6 +11,7 @@ import { encodeImage2, decode2, isSam2Cached } from './segment2';
 import { inpaintMigan } from './inpaint/migan';
 import { inpaintLama } from './inpaint/lama';
 import { flatFill } from './inpaint/flatFill';
+import { sharpenFill, matchGrain } from './inpaint/refine';
 import { FONT_FAMILIES, loadAllFonts } from './fonts';
 import { predictAlpha, isBgModelCached } from './bgremove';
 import { getBackend } from './inference';
@@ -621,6 +622,9 @@ export async function fillHoles(img, W, H, mask, { best, onProgress }) {
         onProgress?.(k / regions.length, big ? 'lama' : 'migan');
         if (big) await timed('  LaMa', () => inpaintLama(sub, m, w, h));
         else await timed('  MI-GAN', () => inpaintMigan(sub, m, w, h));
+        // büyük kesit 512'ye küçültülüp doldurulduğu için bulanıklaşır: yapay zekâ büyütmesiyle keskinleştir, çevrenin dokusunu ekle
+        await sharpenFill(sub, m, w, h).catch(() => false);
+        matchGrain(sub, m, w, h);
         for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
             if (!m[y * w + x]) continue;
             const si = (y * w + x) * 4, di = ((y0 + y) * W + x0 + x) * 4;
