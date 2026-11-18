@@ -36,6 +36,7 @@ import { useBackdrop } from './backdrop';
 import { readabilityIssue } from './quality';
 import { NEUTRAL, isNeutral, applyAdjust, applyCrop } from './adjustActions';
 import { useBrandKit } from '../core/brandKit';
+import { usePalette } from '../core/paletteStore';
 import { loadSignatures, saveSignatures } from './dialogs/SignatureDialog';
 
 const HIGHLIGHT_COLORS = ['#fde047', '#86efac', '#93c5fd', '#f9a8d4', '#fdba74', '#c4b5fd'];
@@ -501,7 +502,18 @@ function Readability({ o, update }) {
 /** Logo araçları: tek tıkla düz zemini silme, boş kenarları kırpma ve tek renge boyama (anında, model yok) */
 function LogoTools({ o, update }) {
     const kit = useBrandKit();
+    const poster = usePalette();
+    const ed = useEditor();
     const [busy, setBusy] = useState(false);
+    // Logonun arkasına afişin renginden zemin plakası: logo kendi renkleriyle kalır ama zeminden ayrılır
+    const addPlate = (hex) => {
+        const s = ed.get(), pageId = s.doc.pages[s.page].id, list = s.objects[pageId] || [];
+        const pad = Math.max(o.w, o.h) * 0.12, gid = o.groupId || newId('gp');
+        const plate = { id: newId('ob'), type: 'rect', x: o.x - pad, y: o.y - pad, w: o.w + pad * 2, h: o.h + pad * 2, fill: hex, stroke: '', width: 0, opacity: 0.92, groupId: gid, name: t('Logo zemini') };
+        const i = list.findIndex((q) => q.id === o.id);
+        const next = [...list.slice(0, i), plate, { ...list[i], groupId: gid }, ...list.slice(i + 1)];
+        ed.dispatch({ type: 'COMMIT', bytes: s.doc.bytes, objects: { ...s.objects, [pageId]: next }, keepSelection: true });
+    };
     const run = async (op, hex) => {
         setBusy(true);
         try {
@@ -526,6 +538,24 @@ function LogoTools({ o, update }) {
                 ))}
                 {o.origSrc && <Button size="sm" variant="ghost" onClick={() => update({ src: o.origSrc, origSrc: undefined })}>{t('Orijinal renk')}</Button>}
             </div>
+            {poster.length > 0 && (
+                <>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-fg-3 mr-0.5">{t('Afişin renkleri')}</span>
+                        {poster.map((hex) => (
+                            <button key={hex} type="button" disabled={busy} title={`${t('Logoyu bu renge boya')} ${hex}`} aria-label={hex} onClick={() => run('tint', hex)}
+                                className="w-6 h-6 rounded-full border border-line-strong transition-transform hover:scale-110" style={{ background: hex }} />
+                        ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-fg-3 mr-0.5">{t('Arkasına zemin')}</span>
+                        {['#ffffff', ...poster.slice(0, 4)].map((hex) => (
+                            <button key={hex} type="button" title={`${t('Logonun arkasına bu renkte zemin koy')} ${hex}`} aria-label={hex} onClick={() => addPlate(hex)}
+                                className="w-6 h-6 rounded-md border border-line-strong transition-transform hover:scale-110" style={{ background: hex }} />
+                        ))}
+                    </div>
+                </>
+            )}
         </Field>
     );
 }

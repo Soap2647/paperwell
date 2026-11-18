@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Check, Pipette } from 'lucide-react';
 import { useBrandKit } from '../core/brandKit';
+import { usePalette } from '../core/paletteStore';
 import { t as tr } from '../i18n';
 
 export const cx = (...a) => a.filter(Boolean).join(' ');
@@ -146,8 +147,9 @@ export const SWATCHES = ['#111827', '#ffffff', '#6b7280', '#e11d48', '#f97316', 
 
 export function ColorPicker({ value, onChange, allowNone, swatches }) {
     const { colors } = useBrandKit();
-    // Varsayılan renk listesinin başında marka renkleri gelir
-    if (!swatches) swatches = [...new Set([...colors.map((c) => c.hex.toLowerCase()), ...SWATCHES])].slice(0, 14);
+    const poster = usePalette();
+    // Varsayılan renk listesi: önce marka renkleri, sonra afişin renkleri, sonra genel renkler
+    if (!swatches) swatches = [...new Set([...colors.map((c) => c.hex.toLowerCase()), ...poster.slice(0, 5), ...SWATCHES])].slice(0, 16);
     return (
         <div className="flex flex-wrap gap-1.5 items-center">
             {allowNone && (

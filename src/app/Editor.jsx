@@ -5,7 +5,8 @@ import { newId } from '../core/pageOps';
 import { TOOL_BY_KEY } from './tools';
 import { moveBy } from './objects';
 import { readImageFile } from './imageFiles';
-import { smartSpot } from './backdrop';
+import { smartSpot, getPalette } from './backdrop';
+import { setPalette } from '../core/paletteStore';
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import TopBar from './TopBar';
@@ -117,6 +118,15 @@ export default function Editor() {
         window.addEventListener('paste', onPaste);
         return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('paste', onPaste); };
     }, [ed, dispatch]);
+
+    // Afişin renk paleti renk seçicilere gelsin (belge ya da sayfa değişince yeniden)
+    const palBytes = state.doc?.bytes, palPage = state.page;
+    useEffect(() => {
+        let live = true;
+        const s = ed.get();
+        if (palBytes) getPalette(palBytes, palPage, s.doc.pages[palPage]).then((p) => live && setPalette(p)).catch(() => {});
+        return () => { live = false; };
+    }, [ed, palBytes, palPage]);
 
     // Görsel dosyasını pencereye sürükleyip bırakmak: sayfaya eklenir
     const [drop, setDrop] = useState(false);

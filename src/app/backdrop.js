@@ -1,7 +1,7 @@
 // Sayfanın küçük bir görüntüsü: yeni öğeyi sakin bir yere koymak ve yazının zeminde okunup okunmadığını ölçmek için
 import { useEffect, useState } from 'react';
 import { renderPageToCanvas } from '../core/render';
-import { calmestSpot } from '../core/placement';
+import { calmestSpot, paletteOf } from '../core/placement';
 import { bbox } from './objects';
 
 const cache = new WeakMap(); // bytes → Map(sayfa → backdrop)
@@ -61,4 +61,11 @@ export function useBackdrop(state) {
         return () => { live = false; };
     }, [bytes, idx, page]);
     return bd;
+}
+
+/** Afişin renk paleti (sayfa görüntüsünden bir kez hesaplanır) */
+export async function getPalette(bytes, pageIndex, page) {
+    const bd = await getBackdrop(bytes, pageIndex, page);
+    if (!bd.palette) bd.palette = paletteOf(bd.data, bd.W, bd.H, 6);
+    return bd.palette;
 }
