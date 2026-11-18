@@ -1,6 +1,6 @@
 // "Ekle" paneli: QR kod (kayıt linki) ve etkinlik bilgi bloğu (tarih, saat, yer). Afişin boş bir yerine,
 // zemine göre okunaklı renkte yerleşir.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { QrCode, CalendarDays, LayoutTemplate } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useEditor } from '../store/editor';
@@ -13,6 +13,7 @@ import { smartSpot, getBackdrop, sampleBackdrop } from './backdrop';
 import { LAYOUTS, buildLayout } from './layouts';
 import { useBrandKit } from '../core/brandKit';
 import { usePalette } from '../core/paletteStore';
+import { renderQr, qrColorOk } from '../core/qrArt';
 
 const inputCls = 'w-full h-9 rounded-lg border border-line bg-surface-2 px-2.5 text-[13px] focus:outline-none focus:border-accent';
 
@@ -29,6 +30,9 @@ export default function InsertPanel() {
     const page = state.doc.pages[state.page];
     const [link, setLink] = useState('');
     const [qrBg, setQrBg] = useState('white');
+    const [qrColor, setQrColor] = useState('#000000');
+    const [qrLogo, setQrLogo] = useState(null);
+    const [qrPreview, setQrPreview] = useState(null);
     const [ev, setEv] = useState({ date: '', time: '', place: '', link: '' });
     const kit = useBrandKit();
     const palette = usePalette();
@@ -54,12 +58,28 @@ export default function InsertPanel() {
         dispatch({ type: 'SET', values: { selected: { pageId: page.id, id: objs[0].id, ids: objs.length > 1 ? objs.map((o) => o.id) : undefined } } });
     };
 
+    const qrOpts = { color: qrColor, transparent: qrBg === 'none', logo: qrLogo };
+    useEffect(() => {
+        let live = true;
+        const id = setTimeout(() => renderQr(link.trim() || 'https://paperwell.app', { ...qrOpts, px: 256 }).then((s) => live && setQrPreview(s)).catch(() => {}), 150);
+        return () => { live = false; clearTimeout(id); };
+    }, [link, qrColor, qrBg, qrLogo]); // eslint-disable-line react-hooks/exhaustive-deps
+    const qrColors = [...new Set(['#000000', ...kit.colors.map((c) => c.hex), ...palette].map((h) => h.toLowerCase()))].filter(qrColorOk).slice(0, 10);
+    const pickLogoFile = (e) => {
+        const f = e.target.files?.[0];
+        e.target.value = '';
+        if (!f) return;
+        const fr = new FileReader();
+        fr.onload = () => setQrLogo(fr.result);
+        fr.readAsDataURL(f);
+    };
+
     const addQr = async () => {
         const text = link.trim();
         if (!text) { toast(t('Önce QR koda girecek linki yazın'), 'info', 3000); return; }
-        const size = Math.min(page.width, page.height) * 0.16;
+        const size = Math.min(page.width, page.height) * (qrLogo ? 0.2 : 0.16);
         const at = await smartSpot(state, size, size);
-        commit([{ id: newId('ob'), type: 'image', x: at.x, y: at.y, w: size, h: size, src: await qrSrc(text, qrBg === 'none'), opacity: 1, name: `QR · ${text.slice(0, 40)}`, qr: text }]);
+        commit([{ id: newId('ob'), type: 'image', x: at.x, y: at.y, w: size, h: size, src: await renderQr(text, qrOpts), opacity: 1, name: `QR · ${text.slice(0, 40)}`, qr: text }]);
     };
 
     const addEvent = async () => {
@@ -89,6 +109,31 @@ export default function InsertPanel() {
             <Field label={t('QR kod')} hint={t('Kayıt formu, web sitesi ya da Instagram linki. Telefonla okutunca açılır.')}>
                 <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" className={inputCls} />
                 <Segmented value={qrBg} onChange={setQrBg} options={[{ value: 'white', label: t('Beyaz zeminli') }, { value: 'none', label: t('Saydam') }]} />
+                <div className="flex gap-3 items-start">
+                    {qrPreview && <img src={qrPreview} alt="" className="w-24 h-24 shrink-0 rounded-lg border border-line" style={{ background: qrBg === 'none' ? 'repeating-conic-gradient(#8884 0 25%, transparent 0 50%) 0 0 / 12px 12px' : '#fff' }} />}
+                    <div className="space-y-2 min-w-0">
+                        <div className="text-[12px] text-fg-3">{t('Ortadaki logo')}</div>
+                        <div className="flex flex-wrap gap-1.5">
+                            <button type="button" onClick={() => setQrLogo(null)} className={`h-9 px-2 rounded-md border text-[12px] ${!qrLogo ? 'border-accent' : 'border-line'}`}>{t('Yok')}</button>
+                            {kit.assets.slice(0, 6).map((a) => (
+                                <button key={a.id} type="button" title={a.name} onClick={() => setQrLogo(a.src)} className={`w-9 h-9 rounded-md border bg-white p-1 ${qrLogo === a.src ? 'border-accent ring-1 ring-accent' : 'border-line'}`}>
+                                    <img src={a.src} alt={a.name} className="w-full h-full object-contain" />
+                                </button>
+                            ))}
+                            <label className="h-9 px-2 rounded-md border border-line text-[12px] flex items-center cursor-pointer hover:border-accent">
+                                {t('Dosyadan')}
+                                <input type="file" accept="image/*" className="hidden" onChange={pickLogoFile} />
+                            </label>
+                        </div>
+                        <div className="text-[12px] text-fg-3">{t('Renk')}</div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {qrColors.map((h) => (
+                                <button key={h} type="button" aria-label={h} onClick={() => setQrColor(h)} className={`w-6 h-6 rounded-full border ${qrColor === h ? 'ring-2 ring-accent ring-offset-1 ring-offset-surface' : 'border-line'}`} style={{ background: h }} />
+                            ))}
+                        </div>
+                    </div>
+                </div>
+                {qrLogo && <p className="text-[11px] text-fg-3">{t('Logo olunca QR biraz büyük konur ve hata düzeltmesi en yükseğe çıkar; yine de bir kez telefonla okutup deneyin.')}</p>}
                 <Button variant="primary" icon={QrCode} className="w-full" onClick={addQr}>{t('QR kodu ekle')}</Button>
             </Field>
 
