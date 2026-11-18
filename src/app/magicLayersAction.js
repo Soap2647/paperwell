@@ -15,16 +15,32 @@ import { t } from '../i18n';
 
 const STAGES = { segment: 'Nesneler bulunuyor...', text: 'Yazılar okunuyor...', fill: 'Arka plan dolduruluyor...' };
 
+// LayerD indirilemediyse (adres erişilemez) bir daha denenmez: SAM 2 yolu kullanılır
+const LAYERD_OFF = 'paperwell.layerdOff';
+const layerdOff = () => { try { return localStorage.getItem(LAYERD_OFF) === BG_MODELS.layerd.url; } catch { return false; } };
+
 /** Eksik modelleri listeler, kullanıcı onayıyla indirir. false: vazgeçildi ya da indirilemedi */
 async function ensureModels(ed, fill) {
     // masaüstü GPU'da nesneleri LayerD ayırır (SAM 2 gerekmez)
-    const layerd = await layerdAvailable();
+    const layerdCached = await isBgModelCached('layerd');
+    const layerd = (await layerdAvailable()) && (layerdCached || !layerdOff());
+    let failed = false;
+    // LayerD inmezse SAM 2 tiny iner; LayerD'ye bağlı diğer modeller atlanır
+    const getLayerd = async (p) => {
+        try { await loadBgModel('layerd', p); } catch (e) {
+            console.warn('LayerD indirilemedi, SAM 2 kullanılacak', e);
+            failed = true;
+            try { localStorage.setItem(LAYERD_OFF, BG_MODELS.layerd.url); } catch { /* yok */ }
+            if (!(await isSam2Cached())) await loadSam2(p);
+        }
+    };
+    const unlessFailed = (fn) => (p) => (failed ? undefined : fn(p));
     const needs = [
         [await isTextModelCached(), OCR_BYTES, loadTextModels],
         ...(layerd
-            ? [[await isBgModelCached('layerd'), BG_MODELS.layerd.bytes, (p) => loadBgModel('layerd', p)], [await isBgModelCached('birefnetLite'), BG_MODELS.birefnetLite.bytes, (p) => loadBgModel('birefnetLite', p)],
+            ? [[layerdCached, BG_MODELS.layerd.bytes, getLayerd], [await isBgModelCached('birefnetLite'), BG_MODELS.birefnetLite.bytes, unlessFailed((p) => loadBgModel('birefnetLite', p))],
                 // illüstrasyon türü afişlerde nesneleri SAM 2 base-plus ayırır
-                [await isSam2Cached('basePlus'), SAM2_LARGE_BYTES, (p) => loadSam2(p, 'basePlus')]]
+                [await isSam2Cached('basePlus'), SAM2_LARGE_BYTES, unlessFailed((p) => loadSam2(p, 'basePlus'))]]
             : [[await isSam2Cached(), SAM2_BYTES, loadSam2]]),
         [await isMiganCached(), 28e6, loadMigan],
         [fill !== 'best' || (await isLamaCached()), LAMA_BYTES, loadLama],

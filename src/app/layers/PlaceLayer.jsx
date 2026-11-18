@@ -46,7 +46,8 @@ export default function PlaceLayer({ page, zoom }) {
             ref={ref}
             className="absolute inset-0"
             style={{ cursor: tool === 'text' ? 'text' : pendingImage ? 'copy' : 'crosshair' }}
-            onPointerDown={click}
+            // pointerdown'da değil click'te: basışın kendi odak değişimi yeni metin kutusunun odağını alıp boş diye siliyordu
+            onClick={click}
             onPointerMove={(e) => setHover(eventToPage(e, ref.current, zoom))}
             onPointerLeave={() => setHover(null)}
         >
