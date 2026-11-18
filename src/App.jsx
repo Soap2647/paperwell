@@ -11,6 +11,7 @@ import { useTheme } from './app/theme';
 import { openFile } from './store/actions';
 import { takeOpenedFiles, onOpenFiles, setWindowTitle } from './platform';
 import { useAutoRecovery } from './app/recovery';
+import { initBrandSync } from './app/brandSync';
 
 function Root() {
     const ed = useEditor();
@@ -19,7 +20,7 @@ function Root() {
     useTheme();
     useAutoRecovery(state);
 
-    useEffect(() => { registerCssFonts(); loadStoredFonts(); loadBrandKit(); }, []);
+    useEffect(() => { registerCssFonts(); loadStoredFonts(); loadBrandKit().then(initBrandSync, initBrandSync); }, []);
 
     // Masaüstü: "Birlikte aç" ile gelen ya da sonradan çift tıklanan dosyalar
     useEffect(() => {

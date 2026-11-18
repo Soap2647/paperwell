@@ -1,10 +1,11 @@
 // Marka kiti paneli: logolar, marka renkleri ve varsayılan yazı tipi. Bir kez eklenir, her açılışta hazır durur.
 import { useRef, useState } from 'react';
-import { Plus, Trash2, Download, Upload, LayoutTemplate } from 'lucide-react';
+import { Plus, Trash2, Download, Upload, LayoutTemplate, FolderSync } from 'lucide-react';
 import { useEditor, findObject } from '../store/editor';
 import { newId } from '../core/pageOps';
 import { addBrandAsset, removeBrandAsset, addBrandColor, removeBrandColor, exportBrandKit, importBrandKit, isBrandPersistent, useBrandKit, saveTemplate, removeTemplate, templateToObjects } from '../core/brandKit';
-import { saveFile } from '../platform';
+import { saveFile, isDesktop } from '../platform';
+import { useBrandFolder, linkBrandFolder, unlinkBrandFolder } from './brandSync';
 import { Button, Field, EyeDropperButton, cx } from '../components/ui';
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
@@ -20,6 +21,7 @@ const colorKey = (o) => (['text', 'path', 'highlight', 'note'].includes(o.type) 
 export default function BrandPanel() {
     const { state, dispatch } = useEditor();
     const kit = useBrandKit();
+    const folder = useBrandFolder();
     const fileRef = useRef(null), kitRef = useRef(null);
     const page = state.doc.pages[state.page];
 
@@ -63,7 +65,7 @@ export default function BrandPanel() {
     const importKit = async (file) => {
         try {
             const r = await importBrandKit(await file.text());
-            toast(`${r.assets} ${t('logo')}, ${r.colors} ${t('renk eklendi')}`, 'success', 4000);
+            toast(`${r.assets} ${t('logo')}, ${r.colors} ${t('renk')}, ${r.templates} ${t('şablon eklendi')}`, 'success', 4000);
         } catch (e) { toast(t(e.message), 'error'); }
     };
 
@@ -146,6 +148,19 @@ export default function BrandPanel() {
                 </div>
                 <input ref={kitRef} type="file" accept=".json,application/json" className="hidden" onChange={(e) => { if (e.target.files[0]) importKit(e.target.files[0]); e.target.value = ''; }} />
             </Field>
+
+            {isDesktop && (
+                <Field label={t('Ekiple ortak kit')} hint={t('OneDrive, Google Drive ya da ağdaki ortak bir klasör seçin. Herkes aynı klasöre bağlanınca biri logo eklediğinde diğerlerine de gelir (dakikada bir). Silmeler paylaşılmaz.')}>
+                    {folder ? (
+                        <div className="rounded-lg border border-line bg-surface-2 p-2 space-y-1.5">
+                            <div className="flex items-center gap-1.5 text-xs"><FolderSync className="w-3.5 h-3.5 text-success shrink-0" /><span className="truncate" title={folder}>{folder}</span></div>
+                            <Button size="sm" variant="ghost" onClick={unlinkBrandFolder}>{t('Bağlantıyı kes')}</Button>
+                        </div>
+                    ) : (
+                        <Button size="sm" icon={FolderSync} onClick={async () => { const f = await linkBrandFolder(); if (f) toast(t('Kit ortak klasöre bağlandı'), 'success', 3000); }}>{t('Ortak klasöre bağla')}</Button>
+                    )}
+                </Field>
+            )}
 
             {!isBrandPersistent() && <p className={cx('text-xs rounded-lg bg-surface-2 p-2 leading-relaxed text-fg-2')}>{t('Bu tarayıcı kalıcı depolamayı engelliyor; marka kiti yalnızca bu oturumda geçerli. Kiti dışa aktararak saklayın.')}</p>}
         </div>

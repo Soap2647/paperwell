@@ -73,6 +73,24 @@ export async function saveFile(data, suggestedName, { path } = {}) {
     return target;
 }
 
+/** Klasör seç (masaüstü). @returns {Promise<string|null>} */
+export async function pickFolder() {
+    if (!isDesktop) return null;
+    const { dialog } = await tauri();
+    return (await dialog.open({ directory: true })) || null;
+}
+
+/** Diskteki metin dosyası (yoksa null) */
+export async function readTextFile(path) {
+    const { core } = await tauri();
+    try { return new TextDecoder().decode(new Uint8Array(await core.invoke('read_file', { path }))); } catch { return null; }
+}
+
+export async function writeTextFile(path, text) {
+    const { core } = await tauri();
+    await core.invoke('write_file', new TextEncoder().encode(text), { headers: { 'x-path': encodeURIComponent(path) } });
+}
+
 /** Uygulama "Birlikte aç" ile başlatıldıysa gelen dosyalar */
 export async function takeOpenedFiles() {
     if (!isDesktop) return [];

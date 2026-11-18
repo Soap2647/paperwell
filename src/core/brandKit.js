@@ -139,23 +139,35 @@ export const resetBrandColors = () => saveColors(DEFAULT_COLORS);
 
 /** Kiti tek bir JSON dosyasına çevirir */
 export function exportBrandKit() {
-    return JSON.stringify({ paperwellBrandKit: 1, colors: state.colors, assets: state.assets.map(({ name, src, w, h }) => ({ name, src, w, h })) });
+    return JSON.stringify({
+        paperwellBrandKit: 1, colors: state.colors,
+        assets: state.assets.map(({ name, src, w, h }) => ({ name, src, w, h })),
+        templates: state.templates.map(({ id, name, width, height, objects }) => ({ id, name, width, height, objects })),
+    });
 }
 
-/** JSON dosyasından kiti ekler (mevcutlar korunur). @returns {Promise<{assets: number, colors: number}>} */
+/** JSON dosyasından kiti ekler (mevcutlar korunur, aynıları atlanır). @returns {Promise<{assets: number, colors: number, templates: number}>} */
 export async function importBrandKit(text) {
     let data;
     try { data = JSON.parse(text); } catch { throw new Error('Bu dosya bir marka kiti gibi görünmüyor'); }
     if (data?.paperwellBrandKit !== 1) throw new Error('Bu dosya bir marka kiti gibi görünmüyor');
-    let colors = 0, assets = 0;
+    let colors = 0, assets = 0, templates = 0;
     for (const c of data.colors || []) if (/^#[0-9a-f]{6}$/i.test(c?.hex) && !state.colors.some((q) => q.hex.toLowerCase() === c.hex.toLowerCase())) { addBrandColor(c.hex, c.name); colors++; }
     for (const a of data.assets || []) {
         if (typeof a?.src !== 'string' || !a.src.startsWith('data:image/')) continue;
+        if (state.assets.some((q) => q.src === a.src)) continue; // zaten var (ortak klasör eşitlemesi tekrar eklemesin)
         const blob = await (await fetch(a.src)).blob();
         await addBrandAsset(new File([blob], `${a.name || 'logo'}.${blob.type.split('/')[1].replace('svg+xml', 'svg')}`, { type: blob.type }));
         assets++;
     }
-    return { assets, colors };
+    for (const tp of data.templates || []) {
+        if (!tp?.id || !Array.isArray(tp.objects) || state.templates.some((q) => q.id === tp.id)) continue;
+        const tpl = { id: tp.id, name: tp.name, width: tp.width, height: tp.height, objects: tp.objects, added: Date.now() };
+        try { await run('readwrite', (st) => st.put(tpl), TEMPLATES); } catch { persistent = false; }
+        emit({ templates: [...state.templates, tpl] });
+        templates++;
+    }
+    return { assets, colors, templates };
 }
 
 /**
