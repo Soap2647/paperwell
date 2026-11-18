@@ -25,9 +25,10 @@ export const BG_MODELS = {
         size: 1024, bytes: 224e6, std: [0.229, 0.224, 0.225], sigmoid: true, gpu: false,
     },
     // LayerD (CyberAgent, ICCV 2025, Apache-2.0): tasarımın en üst katmanını veren BiRefNet; Sihirli Katmanlar, yalnız GPU.
-    // cyberagent/layerd-birefnet ağırlıkları BiRefNet ONNX grafiğine yerleştirilip fp16'ya çevrildi (scripts/layerd_onnx.py).
+    // cyberagent/layerd-birefnet ağırlıkları BiRefNet ONNX grafiğine yerleştirilip fp16'ya çevrildi (scripts/layerd_onnx.py),
+    // Soap26/layerd-birefnet-onnx'e yüklendi (sha256 1f232994…6739).
     layerd: {
-        url: 'https://huggingface.co/paperwell/layerd-birefnet-onnx/resolve/main/onnx/model_fp16.onnx',
+        url: 'https://huggingface.co/Soap26/layerd-birefnet-onnx/resolve/dabdf2f31a368b16e728391428bb7b3f89d647d4/onnx/model_fp16.onnx',
         size: 1024, bytes: 489.7e6, std: [0.229, 0.224, 0.225], sigmoid: true,
     },
 };
