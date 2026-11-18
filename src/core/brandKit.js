@@ -16,6 +16,7 @@ export const DEFAULT_COLORS = [
 let state = { assets: [], colors: DEFAULT_COLORS, templates: [], ready: false };
 const listeners = new Set();
 const emit = (next) => { state = { ...state, ...next }; listeners.forEach((fn) => fn()); };
+export const getBrandKit = () => state;
 export const subscribeBrand = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
 export const getBrand = () => state;
 export const useBrandKit = () => useSyncExternalStore(subscribeBrand, getBrand);

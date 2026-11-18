@@ -1,6 +1,6 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles, Images, Lightbulb, ShieldCheck,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles, Images, Lightbulb, ShieldCheck, Command,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { download, exportPng, saveProject, upscaleImageDoc } from '../store/actions';
@@ -124,6 +124,8 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                 ) : (
                     <IconButton icon={Search} label={t('Bul ve değiştir')} shortcut="Ctrl+F" onClick={() => dispatch({ type: 'SET', values: { search: { query: '', results: [], index: 0 } } })} />
                 )}
+                <IconButton icon={Command} label={t('Komut ara')} shortcut="Ctrl+K" onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))} />
+
                 <Menu trigger={<span data-tour="tools-menu"><Tooltip label={t('Belge araçları')}><Button variant="ghost" icon={Wrench} className="hidden lg:inline-flex">{t('Belge araçları')}</Button></Tooltip><IconButton icon={Wrench} label={t('Belge araçları')} className="lg:hidden" /></span>} items={toolItems} align="right" />
                 <IconButton icon={Printer} label={t('Yazdır')} shortcut="Ctrl+P" onClick={() => open('print')} />
                 <Button variant="ghost" data-tour="preflight" icon={ShieldCheck} onClick={() => open('preflight')} className="hidden xl:inline-flex">{t('Kontrol et')}</Button>

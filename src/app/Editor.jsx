@@ -17,6 +17,7 @@ import Inspector from './Inspector';
 import BusyOverlay from './BusyOverlay';
 import Dialogs from './dialogs/Dialogs';
 import { GeneralTour } from './Tour';
+import CommandPalette from './CommandPalette';
 import { warmGains } from './adjustActions';
 
 let clipboard = null; // kopyalanan nesneler (dizi)
@@ -25,6 +26,7 @@ export default function Editor() {
     const ed = useEditor();
     const { state, dispatch } = ed;
     const [pagesOpen, setPagesOpen] = useState(() => window.innerWidth > 900);
+    const [paletteOpen, setPalette_] = useState(false);
 
     // Klavye kısayolları
     useEffect(() => {
@@ -43,6 +45,7 @@ export default function Editor() {
                 else download(ed, { saveAs: e.shiftKey });
                 return;
             }
+            if (mod && key === 'k') { e.preventDefault(); setPalette_(true); return; }
             if (mod && key === 'p') { e.preventDefault(); dispatch({ type: 'SET', values: { dialog: 'print' } }); return; }
             if (mod && key === 'f') { e.preventDefault(); dispatch({ type: 'SET', values: { search: s.search || { query: '', results: [], index: 0 } } }); return; }
             if (typing) return;
@@ -157,6 +160,7 @@ export default function Editor() {
             </div>
             {state.busy && <BusyOverlay busy={state.busy} />}
             <GeneralTour />
+            <CommandPalette open={paletteOpen} onClose={() => setPalette_(false)} />
             {/* sıcaklık önizlemesi: kırmızı/mavi kazancı (fotoğraf ayarları) */}
             <svg width="0" height="0" className="absolute" aria-hidden="true">
                 <filter id="pw-warm" colorInterpolationFilters="sRGB">
