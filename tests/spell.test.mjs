@@ -16,6 +16,7 @@ const issues = checkLine(line, sp);
 check('üç hata bulunur', issues.length === 3, JSON.stringify(issues));
 check('i/ı hatası için sözlüğün kötü önerisi değil varyant seçilir', issues.find((q) => q.word === 'aldi')?.suggestion === 'aldı');
 check('şapkalı doğru yazım (ZEKÂ) hata sayılmaz', checkLine('ORTAK ZEKÂ', sp).length === 0);
+check('büyük harfli marka adına uzak öneri yapılmaz', checkLine('ÜNİDES', { correct: () => false, suggest: () => ['ünde'] }).every((q) => q.suggestion === null));
 check('kısaltma ve uzak öneri gösterilmez', checkLine('GDG Hackathonu', sp).every((q) => q.suggestion === null));
 check('öneriler uygulanır', applySuggestions(line, issues) === 'Kampüslerden GELECEĞE · projemiz kabul aldı!', applySuggestions(line, issues));
 

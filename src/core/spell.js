@@ -52,7 +52,9 @@ export function checkLine(line, sp) {
         // önce Türkçe harf varyantları (en olası hata), sonra sözlüğün önerisi
         const v = letterVariants(w).find((x) => sp.correct(x));
         // sözlük önerisi yalnız yakınsa (en çok 2 harf farkı): özel adlara (marka, kişi) saçma öneri verilmesin
-        const near = !v && w.length >= 5 ? sp.suggest(w).find((x) => editDistance(x, w) <= 2) : null;
+        // TAMAMI BÜYÜK kelime çoğu zaman marka ya da kısaltmadır (ÜNİDES): yalnız Türkçe harf düzeltmesi önerilir
+        const caps = word === word.toLocaleUpperCase('tr');
+        const near = !v && !caps && w.length >= 5 ? sp.suggest(w).find((x) => editDistance(x, w) <= 2) : null;
         const s = v || near || null;
         out.push({ word, index: m.index, suggestion: s ? matchCase(word, s) : null });
     }
