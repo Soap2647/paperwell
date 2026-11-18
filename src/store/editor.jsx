@@ -11,13 +11,30 @@ const load = (key, fallback) => {
     } catch { return fallback; }
 };
 
+/** Kayıtlı araç ayarları; Google Sans varsayılan yazı fontu olduğunda bir kez geçirilir (sonraki seçimlere dokunulmaz) */
+const loadOpts = () => {
+    const o = load('paperwell.opts', DEFAULT_OPTS);
+    try {
+        if (!localStorage.getItem('paperwell.defaultFont.v1')) {
+            localStorage.setItem('paperwell.defaultFont.v1', '1');
+            if (o.text?.family === 'sans') {
+                const next = { ...o, text: { ...o.text, family: 'googlesans' } };
+                localStorage.setItem('paperwell.opts', JSON.stringify(next));
+                return next;
+            }
+        }
+    } catch { /* yoksay */ }
+    return o;
+};
+
 export const DEFAULT_OPTS = {
     draw: { mode: 'pen', color: '#1d4ed8', width: 3, opacity: 1 },
     highlight: { kind: 'highlight', color: '#fde047' },
     shape: { kind: 'rect', stroke: '#e11d48', fill: '', width: 2, opacity: 1 },
-    text: { family: 'sans', size: 14, color: '#111827', bold: false, italic: false, align: 'left' },
+    text: { family: 'googlesans', size: 14, color: '#111827', bold: false, italic: false, align: 'left' },
     erase: { size: 28, mode: 'fast' },
     grab: { fill: 'ai' },
+    fix: { mode: 'box', size: 32 },
     redact: { fill: 'black' },
     note: { color: '#facc15' },
 };
@@ -29,7 +46,7 @@ const initialState = {
     future: [],
     dirty: false,
     tool: 'select',
-    opts: load('paperwell.opts', DEFAULT_OPTS),
+    opts: loadOpts(),
     selected: null, // { pageId, id }
     editing: null, // { kind:'text', pageId, id } | { kind:'line', pageIndex, lineId } | { kind:'image', pageIndex, imageId }
     zoom: 1,
@@ -42,6 +59,9 @@ const initialState = {
     search: null, // { query, results: [], index }
     pendingImage: null, // yerleştirilecek görsel/imza dataURL
     grab: null, // Nesne aracı: { pageIndex, points: [{x,y,positive}], mask }
+    fix: null, // Düzelt aracı: { pageIndex, rect: {x,y,w,h}, step: "menu"|"text"|"logo", text, busy }
+    rulers: false, // cetvelleri göster
+    guides: {}, // pageId → [{ id, axis: 'x'|'y', pos }] (sayfa birimi, geri alma geçmişine girmez)
     loadId: 0,
 };
 
@@ -59,12 +79,30 @@ function findObject(objects, id) {
     return null;
 }
 
+// Geçmiş panelinde görünen adım adları (eylem kendi etiketini verebilir: a.label)
+const STEP_LABELS = {
+    ADD_OBJECT: 'Öğe eklendi', REMOVE_OBJECT: 'Öğe silindi', REMOVE_OBJECTS: 'Öğeler silindi', UPDATE_OBJECT: 'Öğe değiştirildi',
+    UPDATE_OBJECTS: 'Öğeler değiştirildi', COMMIT: 'Belge değiştirildi', CHECKPOINT: 'Ayar değiştirildi', REORDER_OBJECT: 'Sıra değiştirildi',
+    RESTORE_VERSION: 'Sürüme dönüldü',
+};
+
+/** Yeni geri alma adımı açılan her eylemde adıma ad ve saat yazılır */
 function reducer(s, a) {
+    const n = baseReducer(s, a);
+    if (n !== s && n.past !== s.past && n.past.length && n.past[n.past.length - 1] !== s.past[s.past.length - 1]) {
+        const i = n.past.length - 1;
+        n.past[i] = { ...n.past[i], label: a.label || STEP_LABELS[a.type] || a.type, at: Date.now() };
+    }
+    return n;
+}
+
+function baseReducer(s, a) {
     switch (a.type) {
         case 'LOAD':
-            return { ...initialState, opts: s.opts, doc: a.doc, objects: a.objects || {}, zoom: s.zoom, tool: 'select', loadId: Date.now() };
+            // original: açılıştaki hali (önce/sonra karşılaştırması için; geri alma geçmişi sınırlı olduğundan ayrıca tutulur)
+            return { ...initialState, opts: s.opts, doc: a.doc, objects: a.objects || {}, redactions: a.redactions || {}, forms: a.forms || initialState.forms, versions: a.versions || [], dirty: !!a.dirty, zoom: s.zoom, rulers: s.rulers, tool: 'select', loadId: Date.now(), original: a.original || { bytes: a.doc.bytes, pages: a.doc.pages } };
         case 'CLOSE':
-            return { ...initialState, opts: s.opts };
+            return { ...initialState, opts: s.opts, rulers: s.rulers };
         case 'COMMIT': {
             // Belge baytları (ve gerekirse sayfa listesi / nesneler) değişti
             const doc = { ...s.doc, ...a.docChanges, bytes: a.bytes, pages: a.pages || s.doc.pages };
@@ -78,7 +116,7 @@ function reducer(s, a) {
                 editing: null,
                 selected: a.keepSelection ? s.selected : null,
                 redactions: a.redactions || s.redactions,
-                grab: null,
+                grab: null, fix: null,
                 page: Math.min(s.page, doc.pages.length - 1),
             };
         }
@@ -100,6 +138,21 @@ function reducer(s, a) {
             const objects = { ...s.objects, [f.pageId]: list };
             if (a.transient) return { ...s, objects };
             return { ...s, objects, past: pushPast(s), future: [], dirty: true };
+        }
+        case 'UPDATE_OBJECTS': {
+            // updates: [{ id, changes }] — gruptaki nesneler birlikte taşınır; transient: geri alma adımı açmaz
+            const byId = new Map(a.updates.map((u) => [u.id, u.changes]));
+            const objects = {};
+            for (const [pid, list] of Object.entries(s.objects)) objects[pid] = list.map((o) => (byId.has(o.id) ? { ...o, ...byId.get(o.id) } : o));
+            if (a.transient) return { ...s, objects };
+            return { ...s, objects, past: pushPast(s), future: [], dirty: true };
+        }
+        case 'REMOVE_OBJECTS': {
+            // çoklu seçimi tek geri alma adımında siler
+            const ids = new Set(a.ids);
+            const objects = {};
+            for (const [pid, list] of Object.entries(s.objects)) objects[pid] = list.filter((o) => !ids.has(o.id));
+            return { ...s, past: pushPast(s), future: [], objects, selected: null, editing: null, dirty: true };
         }
         case 'REMOVE_OBJECT': {
             const f = findObject(s.objects, a.id);
@@ -126,6 +179,23 @@ function reducer(s, a) {
         }
         case 'CHECKPOINT':
             return { ...s, past: pushPast(s), future: [], dirty: true };
+        case 'JUMP': {
+            // geçmişteki bir adıma dön: o adımdan sonraki her şey geri alınır (yinele ile geri gelir)
+            let n = s;
+            while (n.past.length > a.index) n = baseReducer(n, { type: 'UNDO' });
+            return n;
+        }
+        case 'SAVE_VERSION': {
+            const v = { id: `v${Date.now()}`, name: a.name, at: Date.now(), doc: s.doc, objects: s.objects, redactions: s.redactions };
+            return { ...s, versions: [v, ...(s.versions || [])].slice(0, 30), dirty: true };
+        }
+        case 'DELETE_VERSION':
+            return { ...s, versions: (s.versions || []).filter((v) => v.id !== a.id) };
+        case 'RESTORE_VERSION': {
+            const v = (s.versions || []).find((x) => x.id === a.id);
+            if (!v) return s;
+            return { ...s, past: pushPast(s), future: [], doc: { ...v.doc, path: s.doc.path, projectPath: s.doc.projectPath, projectName: s.doc.projectName }, objects: v.objects, redactions: v.redactions || {}, selected: null, editing: null, dirty: true, page: Math.min(s.page, v.doc.pages.length - 1) };
+        }
         case 'UNDO': {
             if (!s.past.length) return s;
             const prev = s.past[s.past.length - 1];
@@ -136,7 +206,7 @@ function reducer(s, a) {
                 future: [snapshot(s), ...s.future].slice(0, MAX_HISTORY),
                 selected: null,
                 editing: null,
-                grab: null,
+                grab: null, fix: null,
                 dirty: true,
                 page: Math.min(s.page, prev.doc.pages.length - 1),
             };
@@ -151,15 +221,25 @@ function reducer(s, a) {
                 future: s.future.slice(1),
                 selected: null,
                 editing: null,
-                grab: null,
+                grab: null, fix: null,
                 dirty: true,
                 page: Math.min(s.page, next.doc.pages.length - 1),
             };
         }
+        case 'ADD_GUIDE':
+            return { ...s, guides: { ...s.guides, [a.pageId]: [...(s.guides[a.pageId] || []), a.guide] } };
+        case 'MOVE_GUIDE':
+            return { ...s, guides: { ...s.guides, [a.pageId]: (s.guides[a.pageId] || []).map((g) => (g.id === a.id ? { ...g, pos: a.pos } : g)) } };
+        case 'REMOVE_GUIDE':
+            return { ...s, guides: { ...s.guides, [a.pageId]: (s.guides[a.pageId] || []).filter((g) => g.id !== a.id) } };
+        case 'CLEAR_GUIDES': {
+            const { [a.pageId]: _drop, ...rest } = s.guides;
+            return { ...s, guides: rest };
+        }
         case 'SET':
             return { ...s, ...a.values };
         case 'SET_TOOL':
-            return { ...s, tool: a.tool, selected: null, editing: null, grab: null, pendingImage: a.pendingImage ?? null };
+            return { ...s, tool: a.tool, selected: null, editing: null, grab: null, fix: null, pendingImage: a.pendingImage ?? null };
         case 'SET_OPTS': {
             const opts = { ...s.opts, [a.tool]: { ...s.opts[a.tool], ...a.changes } };
             try { localStorage.setItem('paperwell.opts', JSON.stringify(opts)); } catch { /* yoksay */ }

@@ -14,6 +14,12 @@ import PrintDialog from './PrintDialog';
 import SignatureDialog from './SignatureDialog';
 import BgRemoveDialog from './BgRemoveDialog';
 import ScanDialog from './ScanDialog';
+import SocialExportDialog from './SocialExportDialog';
+import BatchDialog from './BatchDialog';
+import PreflightDialog from './PreflightDialog';
+import HistoryDialog from './HistoryDialog';
+import MotionDialog from './MotionDialog';
+import NewDesignDialog from './NewDesignDialog';
 
 function PositionGrid({ value, onChange, positions }) {
     return (
@@ -231,7 +237,7 @@ function ShortcutsDialog({ open, onClose }) {
     const rows = [
         ...TOOLS.map((tl) => [t(tl.label), tl.key]),
         [t('Geri al'), 'Ctrl+Z'], [t('Yinele'), 'Ctrl+Y'], [t('İndir'), 'Ctrl+S'], [t('Bul ve değiştir'), 'Ctrl+F'],
-        [t('Yakınlaştır') + ' / ' + t('Uzaklaştır'), 'Ctrl + / −'], [t('Genişliğe sığdır'), 'Ctrl+0'],
+        [t('Yakınlaştır') + ' / ' + t('Uzaklaştır'), 'Ctrl + / −'], [t('Genişliğe sığdır'), 'Ctrl+0'], [t('Cetveller'), 'Ctrl+R'],
         [t('Çoğalt'), 'Ctrl+D'], ['Kopyala / Yapıştır', 'Ctrl+C / V'], [t('Sil'), 'Del'], ['Taşı', '← ↑ → ↓'], [t('İptal'), 'Esc'],
     ];
     return (
@@ -265,6 +271,12 @@ export default function Dialogs() {
             <PrintDialog open={d === 'print'} onClose={close} />
             <BgRemoveDialog open={d === 'bgremove'} onClose={close} />
             <ScanDialog open={d === 'scan'} onClose={close} />
+            <NewDesignDialog open={d === 'newdesign' || d === 'resize'} mode={d === 'resize' ? 'resize' : 'new'} onClose={close} />
+            <SocialExportDialog open={d === 'social'} onClose={close} />
+            <BatchDialog open={d === 'batch'} onClose={close} />
+            <PreflightDialog open={d === 'preflight'} onClose={close} />
+            <HistoryDialog open={d === 'history'} onClose={close} />
+            <MotionDialog open={d === 'motion'} onClose={close} />
             <SignatureDialog
                 open={d === 'signature'}
                 onClose={close}

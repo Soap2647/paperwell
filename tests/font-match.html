@@ -1,0 +1,84 @@
+<!doctype html>
+<!--
+  Font eşleştirme testi. Çalıştırma: npm run dev, sonra http://localhost:5173/tests/font-match.html
+  Katalogdaki farklı türde fontlarla (sans, display, serif, script) koyu ve açık zemin üzerine bilinen satırlar çizer,
+  Sihirli Katmanlar'ın yazı adımını (OCR + font eşleştirme) çalıştırır; doğru aile ve ağırlık (±100) oranını ölçer.
+  "Yakın" sayılan: aynı aile ya da birbirine çok benzeyen aileler (aşağıdaki SIMILAR). Sonuç window.__result'ta.
+-->
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>Font eşleştirme testi</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 16px; background: #111; color: #eee; }
+  pre { white-space: pre-wrap; background: #1b1b1b; padding: 12px; border-radius: 8px; }
+  canvas { max-width: 600px; width: 100%; }
+</style>
+</head>
+<body>
+<h1>Font eşleştirme testi</h1>
+<p id="status">Çalışıyor...</p>
+<canvas id="c"></canvas>
+<pre id="result"></pre>
+<script type="module">
+import { extractTexts } from '/src/core/magicLayers.js';
+import { FONT_FAMILIES, loadAllFonts } from '/src/core/fonts.js';
+
+// [metin, aile, ağırlık, boyut, zemin, renk]
+const LINES = [
+    ['Google Developer Group', 'hankengrotesk', 700, 46, '#ffffff', '#202124'],
+    ['Hackathon Başlangıcı', 'hankengrotesk', 600, 40, '#14161a', '#ffffff'],
+    ['Kastamonu Üniversitesi', 'poppins', 700, 44, '#f3f6fb', '#1a73e8'],
+    ['Açık kaynak dünyasında birlikte', 'inter', 400, 38, '#ffffff', '#111111'],
+    ['HACKTOBERFEST', 'anton', 400, 72, '#0b0b0b', '#c6f432'],
+    ['ETKİNLİK PROGRAMI', 'montserrat', 600, 40, '#c6f432', '#111111'],
+    ['VOLEYBOL GECESİ', 'bebasneue', 400, 76, '#1d2b4f', '#ffffff'],
+    ['Spor, eğlence ve güzel bir akşam', 'opensans', 400, 36, '#1d2b4f', '#ffffff'],
+    ['Ödül Töreni & Kapanış', 'oswald', 500, 46, '#ffffff', '#222222'],
+    ['Zarif Akşam Yemeği', 'playfairdisplay', 700, 50, '#fbf7ef', '#3b2a1a'],
+    ['Hadi sahaya!', 'caveat', 700, 64, '#ffffff', '#e8562a'],
+    ['Geliştirici Topluluğu', 'spacegrotesk', 500, 42, '#101820', '#a0e7ff'],
+];
+// görsel olarak neredeyse ayırt edilemeyen aileler (yakın sayılır)
+const SIMILAR = [['hankengrotesk', 'inter', 'figtree', 'manrope', 'plusjakartasans', 'dmsans', 'worksans', 'notosans', 'opensans', 'roboto', 'sans', 'archivo', 'lato'],
+    ['anton', 'oswald', 'bebasneue', 'barlowcondensed', 'leaguespartan'], ['poppins', 'montserrat', 'outfit', 'urbanist', 'leaguespartan', 'lexend', 'sora'],
+    ['playfairdisplay', 'lora', 'merriweather', 'sourceserif4', 'serif'], ['caveat', 'dancingscript', 'permanentmarker']];
+const near = (a, b) => a === b || SIMILAR.some((g) => g.includes(a) && g.includes(b));
+
+async function run() {
+    await loadAllFonts();
+    const W = 1000, rowH = 110;
+    const c = document.getElementById('c');
+    c.width = W; c.height = rowH * LINES.length;
+    const x = c.getContext('2d');
+    LINES.forEach(([text, fam, weight, size, bg, fg], i) => {
+        x.fillStyle = bg; x.fillRect(0, i * rowH, W, rowH);
+        x.font = `${weight} ${size}px ${FONT_FAMILIES[fam].css}`;
+        x.fillStyle = fg; x.textBaseline = 'middle'; x.fillText(text, 40, i * rowH + rowH / 2);
+    });
+    const t0 = performance.now();
+    const texts = await extractTexts(c);
+    const ms = Math.round(performance.now() - t0);
+    const rows = LINES.map(([text, fam, weight], i) => {
+        const y = i * rowH + rowH / 2;
+        const t = texts.find((q) => Math.abs(q.inkCenter[1] - y) < rowH / 2);
+        if (!t) return { want: fam, got: null, text };
+        const gotW = t.font.weight ?? (t.font.bold ? 700 : 400);
+        return { text: t.text, want: `${fam} ${weight}`, got: `${t.font.family} ${gotW}`, score: +t.font.score.toFixed(3),
+            exact: t.font.family === fam, near: near(t.font.family, fam), weightOk: Math.abs(gotW - weight) <= 100, textOk: t.text === text };
+    });
+    const n = rows.length;
+    const result = {
+        ms, found: rows.filter((r) => r.got).length + '/' + n,
+        exact: rows.filter((r) => r.exact).length + '/' + n, near: rows.filter((r) => r.near).length + '/' + n,
+        weight: rows.filter((r) => r.weightOk).length + '/' + n, text: rows.filter((r) => r.textOk).length + '/' + n, rows,
+    };
+    result.ok = rows.filter((r) => r.near).length >= n - 2;
+    window.__result = result;
+    document.getElementById('status').textContent = result.ok ? 'GEÇTİ' : 'KALDI';
+    document.getElementById('result').textContent = JSON.stringify(result, null, 2);
+}
+run().catch((e) => { window.__result = { error: e.message }; document.getElementById('status').textContent = 'Hata: ' + e.message; });
+</script>
+</body>
+</html>

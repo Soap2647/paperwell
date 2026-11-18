@@ -1,6 +1,8 @@
 // Paperwell masaüstü kabuğu: dosya aç/kaydet, "Birlikte aç" ile gelen dosyalar, Inkwell köprüsü.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod ai;
+
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::ipc::{InvokeBody, Request, Response};
@@ -121,6 +123,11 @@ fn open_in_inkwell(request: Request) -> Result<String, String> {
 }
 
 fn main() {
+    let argv: Vec<String> = std::env::args().collect();
+    if argv.get(1).map(String::as_str) == Some("--ai-selftest") && argv.len() >= 4 {
+        ai::selftest(&argv[2], &argv[3]);
+        return;
+    }
     let initial = file_args(&std::env::args().collect::<Vec<_>>());
 
     tauri::Builder::default()
@@ -137,12 +144,19 @@ fn main() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .manage(Opened(Mutex::new(initial)))
+        .manage(ai::Ai::default())
         .invoke_handler(tauri::generate_handler![
             take_opened_files,
             read_file,
             write_file,
             inkwell_available,
-            open_in_inkwell
+            open_in_inkwell,
+            ai::ai_info,
+            ai::ai_cached,
+            ai::ai_download,
+            ai::ai_load,
+            ai::ai_run,
+            ai::ai_free
         ])
         .run(tauri::generate_context!())
         .expect("Paperwell başlatılamadı");

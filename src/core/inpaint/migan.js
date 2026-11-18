@@ -1,7 +1,7 @@
 // MI-GAN (Picsart AI Research) ile tarayıcıda yapay zekâ destekli onarma.
 // Model ilk kullanımda indirilir (~28 MB) ve tarayıcı önbelleğinde saklanır. Görseller cihazdan çıkmaz.
 
-import { fetchModel, isModelCached, getOrt, createSession } from '../modelStore';
+import { openModel, isCached, tensor } from '../inference';
 
 export const MIGAN_URL = 'https://huggingface.co/andraniksargsyan/migan/resolve/main/migan_pipeline_v2.onnx';
 const SIZE = 512;
@@ -9,16 +9,12 @@ const SIZE = 512;
 let sessionPromise = null;
 
 export function isMiganCached() {
-    return isModelCached(MIGAN_URL);
+    return isCached([MIGAN_URL]);
 }
 
 export function loadMigan(onProgress) {
     if (!sessionPromise) {
-        sessionPromise = (async () => {
-            const ort = await getOrt();
-            const model = await fetchModel(MIGAN_URL, onProgress, 28e6);
-            return { ort, session: await createSession(model) };
-        })().catch((e) => {
+        sessionPromise = openModel([{ url: MIGAN_URL, bytes: 28e6 }], onProgress, { webgpu: true }).catch((e) => {
             sessionPromise = null;
             throw e;
         });
@@ -41,7 +37,7 @@ function resizeTo(rgba, w, h, tw, th) {
  * @param {Uint8Array} mask - 1 = onarılacak
  */
 export async function inpaintMigan(rgba, mask, w, h, onProgress) {
-    const { ort, session } = await loadMigan(onProgress);
+    const session = await loadMigan(onProgress);
 
     // Görsel ve maskeyi 512x512'ye ölçekle
     const img = resizeTo(rgba, w, h, SIZE, SIZE);
@@ -63,8 +59,8 @@ export async function inpaintMigan(rgba, mask, w, h, onProgress) {
     }
 
     const feeds = {
-        [session.inputNames[0]]: new ort.Tensor('uint8', imgData, [1, 3, SIZE, SIZE]),
-        [session.inputNames[1]]: new ort.Tensor('uint8', maskData, [1, 1, SIZE, SIZE]),
+        [session.inputNames[0]]: tensor('uint8', imgData, [1, 3, SIZE, SIZE]),
+        [session.inputNames[1]]: tensor('uint8', maskData, [1, 1, SIZE, SIZE]),
     };
     const results = await session.run(feeds);
     const out = Object.values(results)[0];

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { useEditor } from '../store/editor';
 import PageView from './PageView';
+import Rulers from './Rulers';
 
 const GAP = 24;
 const PAD = 32;
@@ -94,20 +95,23 @@ export default function Canvas() {
     if (!doc) return null;
 
     return (
-        <div
-            ref={scrollRef}
-            onScroll={onScroll}
-            className="flex-1 min-w-0 overflow-auto scroll-thin bg-canvas relative"
-            style={{ overscrollBehavior: 'contain' }}
-        >
-            <div className="min-w-full w-max flex flex-col items-center" style={{ padding: PAD, gap: GAP }}>
-                {doc.pages.map((page, i) => (
-                    <div key={page.id} ref={(el) => (pageRefs.current[i] = el)} className="relative">
-                        <PageView page={page} index={i} zoom={zoom} scrollRoot={scrollRef} />
-                        <div className="absolute -bottom-5 left-0 right-0 text-center text-[11px] text-fg-3 tabular-nums select-none">{i + 1}</div>
-                    </div>
-                ))}
+        <div className="flex-1 min-w-0 min-h-0 relative flex">
+            <div
+                ref={scrollRef}
+                onScroll={onScroll}
+                className="flex-1 min-w-0 overflow-auto scroll-thin bg-canvas relative"
+                style={{ overscrollBehavior: 'contain' }}
+            >
+                <div className="min-w-full w-max flex flex-col items-center" style={{ padding: PAD, gap: GAP }}>
+                    {doc.pages.map((page, i) => (
+                        <div key={page.id} ref={(el) => (pageRefs.current[i] = el)} className="relative">
+                            <PageView page={page} index={i} zoom={zoom} scrollRoot={scrollRef} />
+                            <div className="absolute -bottom-5 left-0 right-0 text-center text-[11px] text-fg-3 tabular-nums select-none">{i + 1}</div>
+                        </div>
+                    ))}
+                </div>
             </div>
+            {state.rulers && <Rulers scrollRef={scrollRef} pageRefs={pageRefs} zoom={zoom} page={doc.pages[Math.min(state.page, doc.pages.length - 1)]} pageIndex={Math.min(state.page, doc.pages.length - 1)} />}
         </div>
     );
 }

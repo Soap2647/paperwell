@@ -67,4 +67,26 @@ export async function renderPageToCanvas(bytes, pageIndex, scale, background = '
     return canvas;
 }
 
+/**
+ * Kaydetmek için net render: sayfa 2 kat büyük çizilip yüksek kaliteyle küçültülür (süper örnekleme).
+ * pdf.js büyük görselleri (logolar) küçültürken tırtıklı bırakıyor; bu yol kenarları yumuşak ve keskin tutar.
+ * Çıktı boyutu renderPageToCanvas(bytes, pageIndex, scale) ile aynıdır.
+ */
+export async function renderPageSharp(bytes, pageIndex, scale, background = '#fff') {
+    const doc = await getPdfjsDoc(bytes);
+    const vp = (await doc.getPage(pageIndex + 1)).getViewport({ scale });
+    const w = Math.round(vp.width), h = Math.round(vp.height);
+    const ss = Math.min(2, Math.sqrt(48e6 / (w * h)));
+    if (ss < 1.3) return renderPageToCanvas(bytes, pageIndex, scale, background);
+    const big = await renderPageToCanvas(bytes, pageIndex, scale * ss, background);
+    const out = document.createElement('canvas');
+    out.width = w; out.height = h;
+    const ctx = out.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(big, 0, 0, w, h);
+    big.width = big.height = 0;
+    return out;
+}
+
 export { pdfjsLib };

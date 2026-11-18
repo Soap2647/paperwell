@@ -1,20 +1,17 @@
 // LaMa (Samsung AI, Apache-2.0; OpenCV Zoo ONNX) ile büyük alan onarımı. ~93 MB, bir kez iner.
-import { fetchModel, isModelCached, getOrt, createSession } from '../modelStore';
+import { openModel, isCached, tensor } from '../inference';
 
 export const LAMA_URL = 'https://huggingface.co/opencv/inpainting_lama/resolve/aee6d22f0a13e5e35af1c9a1c3afd62841fc6f3f/inpainting_lama_2025jan.onnx';
 export const LAMA_BYTES = 92.6e6;
 const SIZE = 512;
 
 let loading = null;
-export const isLamaCached = () => isModelCached(LAMA_URL);
+export const isLamaCached = () => isCached([LAMA_URL]);
 
 export function loadLama(onProgress) {
     if (!loading) {
-        loading = (async () => {
-            const ort = await getOrt();
-            const model = await fetchModel(LAMA_URL, onProgress, LAMA_BYTES);
-            return { ort, session: await createSession(model, { webgpu: false }) };
-        })().catch((e) => { loading = null; throw e; });
+        // DirectML bu modelin FFT düğümlerini açamıyor (E_INVALIDARG): masaüstünde çok çekirdekli CPU
+        loading = openModel([{ url: LAMA_URL, bytes: LAMA_BYTES }], onProgress, { gpu: false }).catch((e) => { loading = null; throw e; });
     }
     return loading;
 }
@@ -35,7 +32,7 @@ function resize(rgba, w, h, tw, th) {
  * @param {Uint8Array} mask - 1 = onarılacak
  */
 export async function inpaintLama(rgba, mask, w, h, onProgress) {
-    const { ort, session } = await loadLama(onProgress);
+    const session = await loadLama(onProgress);
     const img = resize(rgba, w, h, SIZE, SIZE);
     const mr = new Uint8ClampedArray(w * h * 4);
     for (let i = 0; i < w * h; i++) { mr[i * 4] = mask[i] ? 255 : 0; mr[i * 4 + 3] = 255; }
@@ -48,8 +45,8 @@ export async function inpaintLama(rgba, mask, w, h, onProgress) {
         for (let c = 0; c < 3; c++) image[c * plane + i] = hole ? 0 : img[i * 4 + c] / 255;
     }
     const out = await session.run({
-        image: new ort.Tensor('float32', image, [1, 3, SIZE, SIZE]),
-        mask: new ort.Tensor('float32', maskT, [1, 1, SIZE, SIZE]),
+        image: tensor('float32', image, [1, 3, SIZE, SIZE]),
+        mask: tensor('float32', maskT, [1, 1, SIZE, SIZE]),
     });
     const d = out.output.data;
     // Çıktı aralığı 0-1 ya da 0-255 olabilir

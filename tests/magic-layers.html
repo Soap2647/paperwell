@@ -4,7 +4,9 @@
   Modeller (OCR, SAM 2, LaMa, MI-GAN) ilk açılışta iner ve önbelleğe alınır.
   GDG tarzı sentetik afiş çizer (gürültülü degrade salon + file, radyal degrade top, 4 çubuklu logo,
   eğik başlıklar, açık zemin üzerinde beyaz yazılar, ikonlar, kavisler), katmanlara ayırır ve ölçer.
-  Ölçüt: top IoU ≥ 0.8, logo + 3 ikon + kavis ayrı öğe, metin 11/12+. Sonuç sayfada ve window.__result'ta.
+  Ölçüt: top IoU ≥ 0.8, logo + 3 ikon + kavis ayrı öğe, metin 11/12+, yazı katmanları + zemin üst üste konunca
+  yazı bölgelerinde özgün afişten ortalama sapma ≤ 3 (0-255; font ve kenarlar aynen korunuyor mu).
+  Sonuç sayfada ve window.__result'ta.
 -->
 <html lang="tr">
 <head>
@@ -128,17 +130,33 @@ async function run() {
     const ball = Math.max(0, ...els.map((e) => ballIoU(e, truth.ball)));
     const found = res.texts.map((t) => norm(t.text));
     const textOk = TEXTS.filter((s) => found.includes(norm(s)));
+    // Yeniden birleştirme: zemin + nesneler + yazı katmanları ≈ özgün afiş mi?
+    const comp = new OffscreenCanvas(W, H), cx = comp.getContext('2d');
+    cx.drawImage(res.background, 0, 0);
+    for (const e of res.elements) cx.drawImage(e.canvas, e.x, e.y);
+    for (const t of res.texts) cx.drawImage(t.layer.canvas, t.layer.x, t.layer.y);
+    const A = canvas.getContext('2d').getImageData(0, 0, W, H).data, B = cx.getImageData(0, 0, W, H).data;
+    let sAll = 0, sText = 0, nText = 0;
+    const inText = new Uint8Array(W * H);
+    for (const t of res.texts) for (let y = t.layer.y; y < t.layer.y + t.layer.h; y++) for (let x = t.layer.x; x < t.layer.x + t.layer.w; x++) inText[y * W + x] = 1;
+    for (let i = 0; i < W * H; i++) {
+        const d = (Math.abs(A[i * 4] - B[i * 4]) + Math.abs(A[i * 4 + 1] - B[i * 4 + 1]) + Math.abs(A[i * 4 + 2] - B[i * 4 + 2])) / 3;
+        sAll += d;
+        if (inText[i]) { sText += d; nText++; }
+    }
+    const recon = { all: +(sAll / (W * H)).toFixed(2), text: +(sText / Math.max(1, nText)).toFixed(2) };
     const checks = {
         ball: ball >= 0.8,
         logo: best(truth.logo) >= 0.5,
         icons: truth.icons.every((b) => best(b) >= 0.5),
         arc: best(truth.arc) >= 0.3,
         texts: textOk.length >= 11,
+        textPixels: recon.text <= 3,
     };
     const result = {
         ok: Object.values(checks).every(Boolean), checks, ms,
         ballIoU: +ball.toFixed(3), logoIoU: +best(truth.logo).toFixed(2), iconIoU: truth.icons.map((b) => +best(b).toFixed(2)), arcIoU: +best(truth.arc).toFixed(2),
-        texts: `${textOk.length}/${TEXTS.length}`, missing: TEXTS.filter((s) => !found.includes(norm(s))), extra: found.filter((s) => !TEXTS.map(norm).includes(s)),
+        recon, texts: `${textOk.length}/${TEXTS.length}`, missing: TEXTS.filter((s) => !found.includes(norm(s))), extra: found.filter((s) => !TEXTS.map(norm).includes(s)),
         elements: els.map((e) => e.box.map(Math.round)),
     };
     window.__result = result;
@@ -148,6 +166,7 @@ async function run() {
     const lc = document.getElementById('layers'); lc.width = W; lc.height = H;
     const lx = lc.getContext('2d');
     for (const e of res.elements) { lx.drawImage(e.canvas, e.x, e.y); lx.strokeStyle = '#e11d48'; lx.lineWidth = 2; lx.strokeRect(e.x, e.y, e.w, e.h); }
+    for (const t of res.texts) { lx.drawImage(t.layer.canvas, t.layer.x, t.layer.y); lx.strokeStyle = '#2563eb'; lx.strokeRect(t.layer.x, t.layer.y, t.layer.w, t.layer.h); }
     const st = document.getElementById('status');
     st.textContent = result.ok ? 'GEÇTİ' : 'KALDI';
     st.className = result.ok ? 'ok' : 'fail';

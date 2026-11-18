@@ -1,6 +1,6 @@
 // Sayfa düzeyi işlemler. Katman nesneleri sayfa kimliğiyle (pageId) tutulur,
 // böylece sıralama değişse de nesneler doğru sayfada kalır.
-import { PDFDocument, degrees } from 'pdf-lib';
+import { PDFDocument, degrees, rgb } from 'pdf-lib';
 import { pageGeometry } from './pdf/geometry';
 import { pageBox, pageRotation } from './pdf/pageModel';
 
@@ -83,4 +83,35 @@ export function rotateObjects(objs, delta, oldW, oldH) {
 
 export function cloneObjects(objs) {
     return (objs || []).map((o) => ({ ...o, id: newId('ob') }));
+}
+
+const hexRgb = (hex) => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+    const n = m ? parseInt(m[1], 16) : 0xffffff;
+    return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+};
+
+/**
+ * Bir PDF sayfasını yeni boyutlu sayfaya yerleştirir (yerinde, sayfa sırası korunur).
+ * Eski sayfa form nesnesi olarak gömülür, k ile ölçeklenir ve (dx, dy)'ye (görünüm uzayı, sol üst) konur.
+ * Not: gömülen sayfanın bağlantı / form alanı / not (annotation) öğeleri taşınmaz.
+ */
+export async function resizePdfPage(bytes, index, { width, height, k, dx, dy, background }) {
+    const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+    const page = doc.getPage(index);
+    const box = pageBox(page);
+    const x0 = Math.min(box[0], box[2]), x1 = Math.max(box[0], box[2]), y0 = Math.min(box[1], box[3]), y1 = Math.max(box[1], box[3]);
+    const rot = ((pageRotation(page) % 360) + 360) % 360;
+    const w0 = x1 - x0, h0 = y1 - y0; // döndürülmemiş sayfa boyutu
+    const vh = rot % 180 ? w0 : h0; // görünüm boyutu
+    // içeriği olmayan (boş) sayfa gömülemez; yalnız yeni boş sayfa kalır
+    const emb = page.node.Contents() ? await doc.embedPage(page, { left: x0, bottom: y0, right: x1, top: y1 }) : null;
+    const np = doc.insertPage(index, [width, height]);
+    if (background) np.drawRectangle({ x: 0, y: 0, width, height, color: hexRgb(background) });
+    // görünüm (sol üst) ofsetinden PDF (sol alt) ofsetine
+    const bx = dx, by = height - dy - vh * k;
+    const anchor = { 0: [bx, by], 90: [bx, by + k * w0], 180: [bx + k * w0, by + k * h0], 270: [bx + k * h0, by] }[rot] || [bx, by];
+    if (emb) np.drawPage(emb, { x: anchor[0], y: anchor[1], xScale: k, yScale: k, rotate: degrees(-rot) });
+    doc.removePage(index + 1);
+    return doc.save();
 }

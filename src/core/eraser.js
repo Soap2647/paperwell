@@ -104,6 +104,34 @@ export async function magicErase({ bytes, pageIndex, mask, maskScale, mode = 'fa
     return await doc2.save();
 }
 
+/**
+ * Onarılmış bölgeyi sayfaya yama olarak gömer ("Düzelt" aracı). Yalnız maskeli pikseller opak, kenarlar yumuşak.
+ * PDF'teki gerçek metnin maske altındaki glifleri de içerik akışından kaldırılır.
+ * @param {Object} p
+ * @param {{x:number,y:number,w:number,h:number}} p.rect - canvas'ın sayfadaki yeri (görünüm birimi)
+ * @param {HTMLCanvasElement|OffscreenCanvas} p.canvas - onarılmış bölge, ölçek p.scale (piksel / görünüm birimi)
+ * @param {Uint8Array} p.mask - canvas boyutunda, 1 = değişen piksel
+ */
+export async function patchPage({ bytes, pageIndex, rect, canvas, scale, mask }) {
+    const W = canvas.width, H = canvas.height;
+    const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+    const geom = pageGeometry(pageBox(doc.getPage(pageIndex)), pageRotation(doc.getPage(pageIndex)));
+    removeContent(doc, pageIndex, (g) => {
+        const [cx, cy] = geom.viewPoint((g.box.x0 + g.box.x1) / 2, (g.box.y0 + g.box.y1) / 2);
+        const x = Math.round((cx - rect.x) * scale), y = Math.round((cy - rect.y) * scale);
+        return x >= 0 && y >= 0 && x < W && y < H && mask[y * W + x] === 1;
+    });
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const img = ctx.getImageData(0, 0, W, H);
+    const soft = feather(dilate(mask, W, H, 1), W, H, Math.max(1, Math.round(scale)));
+    for (let i = 0; i < W * H; i++) img.data[i * 4 + 3] = soft[i];
+    const out = new OffscreenCanvas(W, H);
+    out.getContext('2d').putImageData(img, 0, 0);
+    const png = new Uint8Array(await (await out.convertToBlob({ type: 'image/png' })).arrayBuffer());
+    doc.getPage(pageIndex).drawImage(await doc.embedPng(png), viewBoxToPdf(geom, rect));
+    return await doc.save();
+}
+
 function dilate(mask, w, h, r) {
     const out = new Uint8Array(mask);
     // ayrılabilir kare genişletme

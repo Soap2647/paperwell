@@ -1,0 +1,91 @@
+<!doctype html>
+<!--
+  Arka plan kaldırma tarayıcı testi. Çalıştırma: npm run dev, sonra http://localhost:5173/tests/bg-remove.html
+  (masaüstünde aynı sayfa yerel GPU yolunu kullanır). Alfası bilinen sentetik görsel: gürültülü "fotoğraf" zemin
+  üzerinde radyal degrade top + kol. Hızlı ve Hassas modda ortalama alfa hatası (MAE, 0-255), hatalı piksel oranı
+  (|hata| > 64) ve süre ölçülür. Ölçüt: Hassas MAE ≤ 6. Sonuç sayfada ve window.__result'ta.
+-->
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arka plan kaldırma testi</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 16px; background: #111; color: #eee; }
+  pre { white-space: pre-wrap; background: #1b1b1b; padding: 12px; border-radius: 8px; }
+  canvas { max-width: 320px; width: 100%; }
+</style>
+</head>
+<body>
+<h1>Arka plan kaldırma testi</h1>
+<p id="status">Çalışıyor...</p>
+<canvas id="img"></canvas> <canvas id="out"></canvas>
+<pre id="result"></pre>
+<script type="module">
+import { predictAlpha, predictAlphaPrecise } from '/src/core/bgremove.js';
+import { getBackend } from '/src/core/inference.js';
+
+const W = 800, H = 600;
+function rng(seed) { return () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff); }
+
+function scene() {
+    const c = document.getElementById('img');
+    c.width = W; c.height = H;
+    const x = c.getContext('2d');
+    // zemin: renkli lekeler + gürültü (fotoğraf benzeri)
+    const r = rng(7);
+    x.fillStyle = '#6b8f5e'; x.fillRect(0, 0, W, H);
+    for (let i = 0; i < 60; i++) {
+        const g = x.createRadialGradient(r() * W, r() * H, 0, r() * W, r() * H, 40 + r() * 160);
+        g.addColorStop(0, `hsla(${r() * 360},50%,${30 + r() * 40}%,0.8)`); g.addColorStop(1, 'transparent');
+        x.fillStyle = g; x.fillRect(0, 0, W, H);
+    }
+    const img = x.getImageData(0, 0, W, H);
+    for (let i = 0; i < img.data.length; i += 4) { const n = (r() - 0.5) * 30; img.data[i] += n; img.data[i + 1] += n; img.data[i + 2] += n; }
+    x.putImageData(img, 0, 0);
+    // ön plan ayrı tuvalde: alfası gerçek değer
+    const f = new OffscreenCanvas(W, H), fx = f.getContext('2d');
+    const bg = fx.createRadialGradient(370, 260, 10, 400, 300, 170);
+    bg.addColorStop(0, '#fff3c4'); bg.addColorStop(0.6, '#e8562a'); bg.addColorStop(1, '#7a1d0c');
+    fx.fillStyle = bg; fx.beginPath(); fx.arc(400, 300, 170, 0, Math.PI * 2); fx.fill();
+    fx.strokeStyle = '#1d3d8f'; fx.lineWidth = 26; fx.lineCap = 'round';
+    fx.beginPath(); fx.moveTo(530, 400); fx.lineTo(690, 540); fx.stroke();
+    const truth = fx.getImageData(0, 0, W, H).data;
+    x.drawImage(f, 0, 0);
+    const alpha = new Uint8ClampedArray(W * H);
+    for (let i = 0; i < W * H; i++) alpha[i] = truth[i * 4 + 3];
+    return { canvas: c, alpha };
+}
+
+function score(pred, truth) {
+    let sum = 0, bad = 0;
+    for (let i = 0; i < truth.length; i++) { const e = Math.abs(pred[i] - truth[i]); sum += e; if (e > 64) bad++; }
+    return { mae: +(sum / truth.length).toFixed(2), badPct: +((bad / truth.length) * 100).toFixed(2) };
+}
+
+async function run() {
+    const backend = await getBackend();
+    const { canvas, alpha } = scene();
+    const result = { backend };
+    for (const [name, fn] of [['fast', (c) => predictAlpha(c, 'fast')], ['precise', (c) => predictAlphaPrecise(c)]]) {
+        document.getElementById('status').textContent = name;
+        await fn(canvas); // ısınma (indirme + oturum)
+        const t0 = performance.now();
+        const a = await fn(canvas);
+        result[name] = { ms: Math.round(performance.now() - t0), ...score(a, alpha) };
+        if (name === 'precise') {
+            const o = document.getElementById('out'); o.width = W; o.height = H;
+            const id = new ImageData(W, H);
+            for (let i = 0; i < W * H; i++) { id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = a[i]; id.data[i * 4 + 3] = 255; }
+            o.getContext('2d').putImageData(id, 0, 0);
+        }
+    }
+    result.ok = result.precise.mae <= 6;
+    window.__result = result;
+    document.getElementById('status').textContent = result.ok ? 'GEÇTİ' : 'KALDI';
+    document.getElementById('result').textContent = JSON.stringify(result, null, 2);
+}
+run().catch((e) => { document.getElementById('status').textContent = 'Hata'; document.getElementById('result').textContent = String(e?.stack || e); });
+</script>
+</body>
+</html>

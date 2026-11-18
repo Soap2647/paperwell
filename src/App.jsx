@@ -5,17 +5,22 @@ import Editor from './app/Editor';
 import Toaster from './components/Toaster';
 import { useLocale } from './i18n';
 import { registerCssFonts } from './core/fonts';
+import { loadStoredFonts } from './core/fontStore';
+import { loadBrandKit } from './core/brandKit';
 import { useTheme } from './app/theme';
 import { openFile } from './store/actions';
 import { takeOpenedFiles, onOpenFiles, setWindowTitle } from './platform';
+import { useAutoRecovery } from './app/recovery';
+import { initBrandSync } from './app/brandSync';
 
 function Root() {
     const ed = useEditor();
     const { state } = ed;
     useLocale();
     useTheme();
+    useAutoRecovery(state);
 
-    useEffect(() => { registerCssFonts(); }, []);
+    useEffect(() => { registerCssFonts(); loadStoredFonts(); loadBrandKit().then(initBrandSync, initBrandSync); }, []);
 
     // Masaüstü: "Birlikte aç" ile gelen ya da sonradan çift tıklanan dosyalar
     useEffect(() => {
@@ -31,9 +36,9 @@ function Root() {
 
     // Pencere başlığı
     useEffect(() => {
-        const name = state.doc?.name;
+        const name = state.doc?.projectName || state.doc?.name;
         setWindowTitle(name ? `${state.dirty ? '• ' : ''}${name} — Paperwell` : 'Paperwell');
-    }, [state.doc?.name, state.dirty]);
+    }, [state.doc?.name, state.doc?.projectName, state.dirty]);
 
     // Kaydedilmemiş değişiklik varken sekme kapatılırsa uyar
     useEffect(() => {

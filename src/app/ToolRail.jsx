@@ -18,16 +18,17 @@ export default function ToolRail() {
     };
 
     return (
-        <nav className="w-[68px] shrink-0 bg-surface border-r border-line flex flex-col items-center py-2 gap-0.5 overflow-y-auto scroll-thin" aria-label="Araçlar">
+        <nav data-tour="rail" className="order-last md:order-none w-full md:w-[68px] h-[62px] md:h-auto shrink-0 bg-surface border-t md:border-t-0 md:border-r border-line flex flex-row md:flex-col items-center px-1 md:px-0 py-0 md:py-2 gap-0.5 overflow-x-auto md:overflow-x-hidden md:overflow-y-auto scroll-thin" aria-label="Araçlar">
             {TOOLS.map((tool, i) => {
                 const active = state.tool === tool.id;
                 return (
-                    <div key={tool.id} className="w-full px-1.5">
-                        {(i === 2 || i === 9) && <div className="h-px bg-line mx-2 my-1.5" />}
+                    <div key={tool.id} className="w-[60px] md:w-full shrink-0 px-0.5 md:px-1.5">
+                        {(i === 3 || i === 10 || i === 12 || i === 14) && <div className="hidden md:block h-px bg-line mx-2 my-1.5" />}
                         <Tooltip label={t(tool.hint)} shortcut={tool.key} side="right">
                             <button
                                 type="button"
                                 onClick={() => pick(tool.id)}
+                                data-tour={`tool-${tool.id}`}
                                 aria-pressed={active}
                                 aria-label={t(tool.label)}
                                 className={cx(

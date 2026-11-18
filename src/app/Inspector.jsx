@@ -3,24 +3,40 @@ import { useEffect, useRef, useState } from 'react';
 import {
     Bold, Italic, AlignLeft, AlignCenter, AlignRight, Trash2, Copy, ArrowUp, ArrowDown, Square, Circle, Minus, MoveRight,
     Pen, Highlighter, Underline, Strikethrough, ImageUp, Plus, Check, X, Download, Sparkles, Zap, Search, ImageMinus, ScanLine, Layers,
+    Group, Ungroup, Rows3, SlidersHorizontal, AlignHorizontalSpaceAround, AlignVerticalSpaceAround, Paintbrush, Eraser, Crop, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
 } from 'lucide-react';
+import { bbox, moveBy } from './objects';
 import { useEditor, findObject } from '../store/editor';
-import { commitBytes, withBusy } from '../store/actions';
+import { commitBytes, withBusy, upscaleImageDoc } from '../store/actions';
 import { newId } from '../core/pageOps';
 import { getPageModel, searchDocument } from '../core/modelCache';
 import { redactRects, replaceImageContent, deleteImage } from '../core/pdf/editOps';
 import { isMiganCached, loadMigan } from '../core/inpaint/migan';
 import { isSamCached, loadSam } from '../core/segment';
+import { getBackend } from '../core/inference';
 import { applyGrab, clearGrab } from './grabActions';
-import { FONT_FAMILIES } from '../core/fonts';
+import { FONT_FAMILIES, effectiveWeight } from '../core/fonts';
+import FontPicker from './FontPicker';
 import { documentHasForm } from '../core/forms';
 import { Button, ColorPicker, Field, Segmented, Slider, Toggle, cx } from '../components/ui';
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import { TOOLS } from './tools';
 import LayersPanel from './LayersPanel';
-import { runMagicLayers } from './magicLayersAction';
+import BrandPanel from './BrandPanel';
+import InsertPanel from './InsertPanel';
+import { ToolIntro } from './Tour';
+import FixAllPanel from './FixAllPanel';
+import { fixFindTexts } from './fixActions';
+import { runMagicLayers, runMagicLayersOnObject } from './magicLayersAction';
 import { readImageFile } from './imageFiles';
+import { logoEdit } from '../core/logoTools';
+import { effectCss } from '../core/textEffects';
+import { useBackdrop } from './backdrop';
+import { readabilityIssue } from './quality';
+import { NEUTRAL, isNeutral, applyAdjust, applyCrop } from './adjustActions';
+import { useBrandKit } from '../core/brandKit';
+import { usePalette } from '../core/paletteStore';
 import { loadSignatures, saveSignatures } from './dialogs/SignatureDialog';
 
 const HIGHLIGHT_COLORS = ['#fde047', '#86efac', '#93c5fd', '#f9a8d4', '#fdba74', '#c4b5fd'];
@@ -68,12 +84,20 @@ function NumberInput({ value, onChange, min = 1, max = 400, step = 0.5, suffix }
     );
 }
 
-function FamilySelect({ value, onChange, originalLabel }) {
+const FamilySelect = FontPicker;
+
+const WEIGHT_STEPS = [{ value: 400, label: 'Normal' }, { value: 500, label: 'Orta' }, { value: 600, label: 'Yarı kalın' }, { value: 700, label: 'Kalın' }];
+/** Ailenin 2'den çok ağırlığı varsa 4 kademeli kalınlık seçici */
+function WeightControl({ o, update }) {
+    const f = FONT_FAMILIES[o.family];
+    if (!f?.weights || f.weights.length <= 2) return null;
+    const w = effectiveWeight(o);
     return (
-        <select className="field" value={value} onChange={(e) => onChange(e.target.value)}>
-            {originalLabel && <option value="original">{t('Orijinal')}: {originalLabel}</option>}
-            {Object.entries(FONT_FAMILIES).map(([k, f]) => <option key={k} value={k}>{f.label}</option>)}
-        </select>
+        <Field label={t('Kalınlık')}>
+            <Segmented value={WEIGHT_STEPS.reduce((b, s) => (Math.abs(s.value - w) < Math.abs(b - w) ? s.value : b), 400)}
+                onChange={(weight) => update({ weight, bold: weight >= 600 })}
+                options={WEIGHT_STEPS.map((s) => ({ ...s, label: <span className="truncate">{t(s.label)}</span> }))} />
+        </Field>
     );
 }
 
@@ -134,8 +158,140 @@ function ImageEditPanel({ editing }) {
 
 // ─── Seçili nesne ───────────────────────────────────────────────────────────
 
+/** Gruptaki nesne: birlikte taşındığını söyler, tek tıkla çözer */
+function GroupInfo({ o, pageId }) {
+    const { state, dispatch } = useEditor();
+    const members = (state.objects[pageId] || []).filter((q) => q.groupId === o.groupId);
+    return (
+        <div className="rounded-xl border border-line bg-surface-2 p-2.5 text-xs text-fg-2 space-y-2">
+            <p className="leading-relaxed">{t('Bu parça bir grubun içinde')} ({members.length}): {t('birlikte taşınırlar.')}</p>
+            <Button size="sm" onClick={() => dispatch({ type: 'UPDATE_OBJECTS', updates: members.map((q) => ({ id: q.id, changes: { groupId: undefined } })) })}>{t('Grubu çöz')}</Button>
+        </div>
+    );
+}
+
+/** Birden fazla nesne seçili: grupla, hizala, sil */
+function MultiPanel({ pageId, ids }) {
+    const { state, dispatch } = useEditor();
+    const objs = (state.objects[pageId] || []).filter((o) => ids.includes(o.id));
+    const free = objs.filter((o) => !o.locked);
+    const grouped = objs.length > 1 && objs.every((o) => o.groupId && o.groupId === objs[0].groupId);
+    const bs = free.map(bbox);
+    const box = bs.length && { x0: Math.min(...bs.map((b) => b.x)), y0: Math.min(...bs.map((b) => b.y)), x1: Math.max(...bs.map((b) => b.x + b.w)), y1: Math.max(...bs.map((b) => b.y + b.h)) };
+    // seçimin toplam kutusuna göre hizalar
+    const align = (mode) => dispatch({
+        type: 'UPDATE_OBJECTS',
+        updates: free.map((o, i) => {
+            const b = bs[i];
+            const dx = mode === 'left' ? box.x0 - b.x : mode === 'right' ? box.x1 - (b.x + b.w) : mode === 'hcenter' ? (box.x0 + box.x1) / 2 - (b.x + b.w / 2) : 0;
+            const dy = mode === 'top' ? box.y0 - b.y : mode === 'bottom' ? box.y1 - (b.y + b.h) : mode === 'vcenter' ? (box.y0 + box.y1) / 2 - (b.y + b.h / 2) : 0;
+            return { id: o.id, changes: moveBy(o, dx, dy) };
+        }),
+    });
+    const group = () => {
+        const gid = newId('gp');
+        dispatch({ type: 'UPDATE_OBJECTS', updates: objs.map((o) => ({ id: o.id, changes: { groupId: gid } })) });
+        toast(t('Gruplandı: artık birlikte taşınırlar'), 'success', 3000);
+    };
+    const ungroup = () => dispatch({ type: 'UPDATE_OBJECTS', updates: objs.map((o) => ({ id: o.id, changes: { groupId: undefined } })) });
+    // ilk ve son nesne yerinde kalır, aradakiler aralar eşit olacak şekilde yerleşir
+    const distribute = (axis) => {
+        const W = axis === 'x' ? 'w' : 'h';
+        const order = free.map((o, i) => ({ o, b: bs[i] })).sort((p, q) => (p.b[axis] + p.b[W] / 2) - (q.b[axis] + q.b[W] / 2));
+        const first = order[0].b, last = order[order.length - 1].b;
+        const gap = (last[axis] + last[W] - first[axis] - order.reduce((n, p) => n + p.b[W], 0)) / (order.length - 1);
+        let at = first[axis];
+        dispatch({
+            type: 'UPDATE_OBJECTS',
+            updates: order.map(({ o, b }) => {
+                const d = at - b[axis];
+                at += b[W] + gap;
+                return { id: o.id, changes: axis === 'x' ? moveBy(o, d, 0) : moveBy(o, 0, d) };
+            }),
+        });
+    };
+    // Logo şeridi: döndürülmemiş görseller ortanca yüksekliğe ölçeklenir, ortak yatay eksene oturur, soldan sağa eşit aralıkla dizilir
+    const logoStrip = () => {
+        const sizable = (o) => o.type === 'image' && !o.rotation;
+        const imgs = free.filter(sizable).map((o) => o.h).sort((a, b) => a - b);
+        const page = state.doc.pages.find((p) => p.id === pageId);
+        const n = free.length;
+        const measure = (H) => {
+            const items = free.map((o, i) => {
+                const b = bs[i], k = sizable(o) ? H / o.h : 1;
+                return { o, b, k, w: b.w * k, h: b.h * k, cx: b.x + b.w / 2 };
+            }).sort((p, q) => p.cx - q.cx);
+            return { items, total: items.reduce((s, p) => s + p.w, 0) };
+        };
+        let H = imgs[imgs.length >> 1];
+        let { items, total } = measure(H);
+        let gap = (box.x1 - box.x0 - total) / (n - 1);
+        if (gap < H * 0.3) gap = H * 0.5;
+        // şerit sayfaya sığmıyorsa (sayfa genişliğinin %90'ı) logolar orantılı küçülür
+        const maxW = page.width * 0.9;
+        if (total + gap * (n - 1) > maxW) {
+            const f = maxW / (total + gap * (n - 1));
+            H *= f; gap *= f;
+            ({ items, total } = measure(H));
+        }
+        const width = total + gap * (n - 1);
+        let at = gap === (box.x1 - box.x0 - total) / (n - 1) ? box.x0 : (box.x0 + box.x1) / 2 - width / 2;
+        at = Math.max(page.width * 0.05, Math.min(at, page.width * 0.95 - width));
+        const cy = items.reduce((s, p) => s + p.b.y + p.b.h / 2, 0) / n;
+        dispatch({
+            type: 'UPDATE_OBJECTS',
+            updates: items.map((p) => {
+                const x = at;
+                at += p.w + gap;
+                if (p.k !== 1) return { id: p.o.id, changes: { x, y: cy - p.h / 2, w: p.w, h: p.h } };
+                return { id: p.o.id, changes: moveBy(p.o, x - p.b.x, cy - p.h / 2 - p.b.y) };
+            }),
+        });
+    };
+    const ALIGN = [
+        ['left', AlignStartVertical, 'Sola hizala'], ['hcenter', AlignCenterVertical, 'Yatayda ortala'], ['right', AlignEndVertical, 'Sağa hizala'],
+        ['top', AlignStartHorizontal, 'Üste hizala'], ['vcenter', AlignCenterHorizontal, 'Dikeyde ortala'], ['bottom', AlignEndHorizontal, 'Alta hizala'],
+    ];
+    return (
+        <Section title={`${objs.length} ${t('nesne seçili')}`}>
+            <p className="text-xs text-fg-3 leading-relaxed">{t('Sürükleyince hepsi birlikte taşınır. Shift ile tıklayarak seçime ekleyip çıkarabilirsiniz.')}</p>
+            {grouped
+                ? <Button icon={Ungroup} className="w-full" onClick={ungroup}>{t('Grubu çöz')}</Button>
+                : <Button variant="primary" icon={Group} className="w-full" onClick={group}>{t('Grupla (hep birlikte kalsın)')}</Button>}
+            {free.length > 1 && (
+                <Field label={t('Hizala')}>
+                    <div className="grid grid-cols-6 gap-1">
+                        {ALIGN.map(([m, Icon, label]) => (
+                            <button key={m} type="button" title={t(label)} aria-label={t(label)} onClick={() => align(m)}
+                                className="h-8 rounded-lg border border-line flex items-center justify-center text-fg-2 hover:bg-surface-2 hover:text-fg">
+                                <Icon className="w-4 h-4" />
+                            </button>
+                        ))}
+                    </div>
+                </Field>
+            )}
+            {free.length > 2 && (
+                <Field label={t('Eşit aralıkla dağıt')}>
+                    <div className="grid grid-cols-2 gap-1.5">
+                        <Button size="sm" icon={AlignHorizontalSpaceAround} onClick={() => distribute('x')}>{t('Yatay')}</Button>
+                        <Button size="sm" icon={AlignVerticalSpaceAround} onClick={() => distribute('y')}>{t('Dikey')}</Button>
+                    </div>
+                </Field>
+            )}
+            {free.length > 1 && free.some((o) => o.type === 'image') && (
+                <>
+                    <Button icon={Rows3} className="w-full" onClick={logoStrip}>{t('Logo şeridi yap')}</Button>
+                    <p className="text-xs text-fg-3 leading-relaxed -mt-1">{t('Logolar aynı yüksekliğe gelir, aynı hizaya oturur ve eşit aralıkla dizilir.')}</p>
+                </>
+            )}
+            <Button variant="danger" icon={Trash2} className="w-full" onClick={() => dispatch({ type: 'REMOVE_OBJECTS', ids })}>{t('Hepsini sil')}</Button>
+        </Section>
+    );
+}
+
 function ObjectPanel({ o, pageId }) {
-    const { dispatch } = useEditor();
+    const ed = useEditor();
+    const { dispatch } = ed;
     const update = (changes) => dispatch({ type: 'UPDATE_OBJECT', id: o.id, changes });
     const live = (changes) => dispatch({ type: 'UPDATE_OBJECT', id: o.id, changes, transient: true });
     const checkpoint = () => dispatch({ type: 'CHECKPOINT' });
@@ -150,13 +306,16 @@ function ObjectPanel({ o, pageId }) {
     return (
         <>
             <Section title={titles[o.type]}>
+                {(o.type === 'text' || o.type === 'image') && <Readability o={o} update={update} />}
                 {o.type === 'text' && (
                     <>
                         <Field label={t('Font')}><FamilySelect value={o.family} onChange={(family) => update({ family })} /></Field>
                         <div className="flex items-end gap-3">
                             <Field label={t('Boyut')}><NumberInput value={o.size} onChange={(size) => update({ size })} suffix="pt" /></Field>
-                            <StyleToggles bold={o.bold} italic={o.italic} onChange={update} />
+                            <StyleToggles bold={o.bold} italic={o.italic} onChange={(c) => update('bold' in c ? { ...c, weight: undefined } : c)} />
                         </div>
+                        <WeightControl o={o} update={update} />
+                        <TextEffects o={o} update={update} live={live} checkpoint={checkpoint} />
                         <Field label={t('Hizalama')}>
                             <Segmented value={o.align || 'left'} onChange={(align) => update({ align })} options={[{ value: 'left', icon: AlignLeft }, { value: 'center', icon: AlignCenter }, { value: 'right', icon: AlignRight }]} />
                         </Field>
@@ -164,6 +323,13 @@ function ObjectPanel({ o, pageId }) {
                         {opacity}
                         {rotation}
                         <p className="text-xs text-fg-3">Çift tıklayarak metni düzenleyin.</p>
+                        {o.rasterSource && (
+                            <Button icon={ImageUp} onClick={() => {
+                                const r = o.rasterSource;
+                                const textSource = { type: 'text', text: o.text, family: o.family, bold: o.bold, weight: o.weight, italic: o.italic, size: o.size, color: o.color, align: o.align, lineHeight: o.lineHeight, opacity: o.opacity, rotation: o.rotation, w: o.w, h: o.h, x: -r.x, y: -r.y };
+                                update({ type: 'image', src: r.src, x: o.x + r.x, y: o.y + r.y, w: r.w, h: r.h, rotation: 0, textSource, rasterSource: undefined });
+                            }}>{t('Afişteki haline dön')}</Button>
+                        )}
                     </>
                 )}
                 {(o.type === 'rect' || o.type === 'ellipse') && (
@@ -195,11 +361,28 @@ function ObjectPanel({ o, pageId }) {
                         <Field label={t('Renk')}><ColorPicker value={o.color} swatches={HIGHLIGHT_COLORS.concat(['#e11d48', '#2563eb'])} onChange={(color) => update({ color })} /></Field>
                     </>
                 )}
+                {o.groupId && <GroupInfo o={o} pageId={pageId} />}
                 {o.type === 'image' && (
                     <>
                         {opacity}
                         {rotation}
-                        <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: o.id } })}>{t('Arka planı kaldır')}</Button>
+                        {o.textSource ? (
+                            <>
+                                <Button icon={Pen} onClick={() => {
+                                    const x = o.x + o.textSource.x, y = o.y + o.textSource.y;
+                                    update({ ...o.textSource, x, y, src: undefined, textSource: undefined, rasterSource: { src: o.src, x: o.x - x, y: o.y - y, w: o.w, h: o.h } });
+                                }}>{t('Metni düzenle')}</Button>
+                                <p className="text-xs text-fg-3 leading-relaxed">
+                                    {t('Yazı şu an afişteki haliyle duruyor. Düzenlerseniz şu fontla yeniden yazılır:')} {FONT_FAMILIES[o.textSource.family]?.label}{o.textSource.weight && o.textSource.weight !== 400 && o.textSource.weight !== 700 ? ` ${o.textSource.weight}` : o.textSource.bold ? `, ${t('Kalın').toLowerCase()}` : ''}{o.textSource.italic ? `, ${t('İtalik').toLowerCase()}` : ''}
+                                </p>
+                            </>
+                        ) : (
+                            <>
+                                {!o.signature && <Button variant="primary" icon={Layers} onClick={() => runMagicLayersOnObject(ed, o.id)}>{t('Sihirli Katmanlar')}</Button>}
+                                <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: o.id } })}>{t('Arka planı kaldır')}</Button>
+                                {!o.signature && <LogoTools o={o} update={update} />}
+                            </>
+                        )}
                     </>
                 )}
                 {o.type === 'note' && (
@@ -218,6 +401,162 @@ function ObjectPanel({ o, pageId }) {
                 </div>
             </Section>
         </>
+    );
+}
+
+// Hazır yazı stilleri: tek tıkla efekt seti (renk de değişebilir); "Sade" hepsini kaldırır
+const TEXT_PRESETS = [
+    { name: 'Sade', fx: { shadow: undefined, outline: undefined, gradient: undefined } },
+    { name: 'Gölgeli', fx: { shadow: { color: '#000000', opacity: 0.55, blur: 10, dist: 5 }, outline: undefined, gradient: undefined } },
+    { name: 'Çerçeveli', fx: { outline: { color: '#000000', width: 2.5 }, shadow: undefined, gradient: undefined } },
+    { name: 'Neon', fx: { color: '#ffffff', shadow: { color: '#22d3ee', opacity: 0.95, blur: 22, dist: 0 }, outline: undefined, gradient: undefined } },
+    { name: 'Altın', fx: { gradient: { from: '#fde68a', to: '#b45309', angle: 180 }, shadow: { color: '#000000', opacity: 0.45, blur: 6, dist: 3 }, outline: undefined } },
+    { name: 'Gökkuşağı', fx: { gradient: { from: '#60a5fa', to: '#c084fc', angle: 90 }, shadow: undefined, outline: undefined } },
+];
+
+/** Yazı efektleri: hazır stiller + gölge, dış çizgi, degrade ayarları */
+function TextEffects({ o, update, live, checkpoint }) {
+    const fx = (key, def) => (o[key] ? update({ [key]: undefined }) : update({ [key]: def }));
+    const sub = (key, changes) => live({ [key]: { ...o[key], ...changes } });
+    const chip = (key, label, def) => (
+        <button type="button" onClick={() => fx(key, def)} aria-pressed={!!o[key]}
+            className={cx('h-7 px-2.5 rounded-full border text-xs font-medium', o[key] ? 'border-accent bg-accent-soft text-fg' : 'border-line text-fg-2 hover:bg-surface-2')}>{label}</button>
+    );
+    return (
+        <Field label={t('Efektler')}>
+            <div className="grid grid-cols-3 gap-1.5">
+                {TEXT_PRESETS.map((p) => (
+                    <button key={p.name} type="button" onClick={() => update(p.fx)}
+                        className="h-11 rounded-lg border border-line bg-[#1e1b4b] hover:border-accent flex items-center justify-center overflow-hidden">
+                        <span style={{ fontFamily: 'inherit', fontWeight: 800, fontSize: 14, ...effectCss({ ...p.fx, color: p.fx.color || '#ffffff' }), color: p.fx.gradient ? 'transparent' : (p.fx.color || '#ffffff') }}>{t(p.name)}</span>
+                    </button>
+                ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+                {chip('shadow', t('Gölge'), { color: '#000000', opacity: 0.55, blur: 10, dist: 5 })}
+                {chip('outline', t('Dış çizgi'), { color: '#000000', width: 2 })}
+                {chip('gradient', t('Degrade'), { from: o.color || '#ffffff', to: '#7c3aed', angle: 180 })}
+            </div>
+            {o.shadow && (
+                <div className="space-y-2 rounded-lg border border-line p-2">
+                    <span className="text-xs font-medium text-fg-2">{t('Gölge')}</span>
+                    <ColorPicker value={o.shadow.color} onChange={(color) => update({ shadow: { ...o.shadow, color } })} />
+                    <Slider label={t('Yumuşaklık')} value={o.shadow.blur} min={0} max={40} onStart={checkpoint} onChange={(blur) => sub('shadow', { blur })} />
+                    <Slider label={t('Uzaklık')} value={o.shadow.dist} min={0} max={30} onStart={checkpoint} onChange={(dist) => sub('shadow', { dist })} />
+                    <Slider label={t('Koyuluk')} value={Math.round((o.shadow.opacity ?? 0.6) * 100)} min={10} max={100} unit="%" onStart={checkpoint} onChange={(v) => sub('shadow', { opacity: v / 100 })} />
+                </div>
+            )}
+            {o.outline && (
+                <div className="space-y-2 rounded-lg border border-line p-2">
+                    <span className="text-xs font-medium text-fg-2">{t('Dış çizgi')}</span>
+                    <ColorPicker value={o.outline.color} onChange={(color) => update({ outline: { ...o.outline, color } })} />
+                    <Slider label={t('Kalınlık')} value={o.outline.width} min={0.5} max={12} step={0.5} unit=" pt" onStart={checkpoint} onChange={(width) => sub('outline', { width })} />
+                </div>
+            )}
+            {o.gradient && (
+                <div className="space-y-2 rounded-lg border border-line p-2">
+                    <span className="text-xs font-medium text-fg-2">{t('Degrade')}</span>
+                    <ColorPicker value={o.gradient.from} onChange={(from) => update({ gradient: { ...o.gradient, from } })} />
+                    <ColorPicker value={o.gradient.to} onChange={(to) => update({ gradient: { ...o.gradient, to } })} />
+                    <Segmented value={o.gradient.angle ?? 180} onChange={(angle) => update({ gradient: { ...o.gradient, angle } })}
+                        options={[{ value: 180, label: '↓' }, { value: 90, label: '→' }, { value: 135, label: '↘' }, { value: 45, label: '↗' }]} />
+                </div>
+            )}
+        </Field>
+    );
+}
+
+/** Okunabilirlik: yazı ya da logo zemininde kayboluyorsa uyarır ve tek tıkla düzeltme önerir */
+function Readability({ o, update }) {
+    const { state } = useEditor();
+    const bd = useBackdrop(state);
+    const page = state.doc.pages[state.page];
+    const [issue, setIssue] = useState(null);
+    useEffect(() => {
+        let live = true;
+        if (bd) readabilityIssue(o, bd, page).then((r) => live && setIssue(r));
+        return () => { live = false; };
+    }, [bd, o, page]);
+    if (!issue) return null;
+    const { light, best } = issue;
+    const fixText = (changes) => update({ ...changes, gradient: undefined });
+    const tint = async (hex) => { const ch = await logoEdit(o, 'tint', hex).catch(() => null); if (ch) update(o.origSrc ? ch : { ...ch, origSrc: o.src }); };
+    return (
+        <div className="rounded-xl border border-warning/40 bg-warning/10 p-2.5 space-y-2">
+            <p className="text-xs leading-relaxed"><b>{o.type === 'text' ? t('Bu yazı zeminde zor okunuyor.') : t('Bu logo zeminde kayboluyor.')}</b> {t('Tek tıkla düzeltin:')}</p>
+            <div className="flex flex-wrap gap-1.5">
+                {o.type === 'text' ? (
+                    <>
+                        <Button size="sm" onClick={() => fixText({ color: best })}>{light ? t('Beyaz yap') : t('Koyu yap')}</Button>
+                        <Button size="sm" onClick={() => update({ outline: { color: light ? '#111827' : '#ffffff', width: Math.max(1, o.size * 0.04) } })}>{t('Dış çizgi ekle')}</Button>
+                        <Button size="sm" onClick={() => update({ shadow: { color: light ? '#000000' : '#ffffff', opacity: 0.8, blur: o.size * 0.25, dist: 0 } })}>{t('Gölge ekle')}</Button>
+                    </>
+                ) : (
+                    <Button size="sm" onClick={() => tint(best)}>{light ? t('Beyaz yap') : t('Koyu yap')}</Button>
+                )}
+            </div>
+        </div>
+    );
+}
+
+/** Logo araçları: tek tıkla düz zemini silme, boş kenarları kırpma ve tek renge boyama (anında, model yok) */
+function LogoTools({ o, update }) {
+    const kit = useBrandKit();
+    const poster = usePalette();
+    const ed = useEditor();
+    const [busy, setBusy] = useState(false);
+    // Logonun arkasına afişin renginden zemin plakası: logo kendi renkleriyle kalır ama zeminden ayrılır
+    const addPlate = (hex) => {
+        const s = ed.get(), pageId = s.doc.pages[s.page].id, list = s.objects[pageId] || [];
+        const pad = Math.max(o.w, o.h) * 0.12, gid = o.groupId || newId('gp');
+        const plate = { id: newId('ob'), type: 'rect', x: o.x - pad, y: o.y - pad, w: o.w + pad * 2, h: o.h + pad * 2, fill: hex, stroke: '', width: 0, opacity: 0.92, groupId: gid, name: t('Logo zemini') };
+        const i = list.findIndex((q) => q.id === o.id);
+        const next = [...list.slice(0, i), plate, { ...list[i], groupId: gid }, ...list.slice(i + 1)];
+        ed.dispatch({ type: 'COMMIT', bytes: s.doc.bytes, objects: { ...s.objects, [pageId]: next }, keepSelection: true });
+    };
+    const run = async (op, hex) => {
+        setBusy(true);
+        try {
+            const changes = await logoEdit(o, op, hex);
+            if (!changes) toast(t('Kırpılacak boş kenar yok'), 'info', 2500);
+            else update(op === 'tint' ? (o.origSrc ? changes : { ...changes, origSrc: o.src }) : { ...changes, origSrc: undefined });
+        } catch (e) { toast(t(e.message), 'info', 4500); }
+        setBusy(false);
+    };
+    const colors = [...new Set(['#ffffff', '#000000', ...kit.colors.map((c) => c.hex.toLowerCase())])].slice(0, 9);
+    return (
+        <Field label={t('Logo')} hint={t('Beyaz zeminli logoyu koyu afişe koyarken zemini silin; koyu afişte okunmayan logoyu beyaz yapın.')}>
+            <div className="grid grid-cols-2 gap-1.5">
+                <Button size="sm" icon={Eraser} disabled={busy} onClick={() => run('bg')}>{t('Düz zemini sil')}</Button>
+                <Button size="sm" icon={Crop} disabled={busy} onClick={() => run('trim')}>{t('Boşlukları kırp')}</Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-xs text-fg-3 inline-flex items-center gap-1 mr-0.5"><Paintbrush className="w-3.5 h-3.5" />{t('Tek renk')}</span>
+                {colors.map((hex) => (
+                    <button key={hex} type="button" disabled={busy} title={hex} aria-label={hex} onClick={() => run('tint', hex)}
+                        className="w-6 h-6 rounded-full border border-line-strong transition-transform hover:scale-110" style={{ background: hex }} />
+                ))}
+                {o.origSrc && <Button size="sm" variant="ghost" onClick={() => update({ src: o.origSrc, origSrc: undefined })}>{t('Orijinal renk')}</Button>}
+            </div>
+            {poster.length > 0 && (
+                <>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-fg-3 mr-0.5">{t('Afişin renkleri')}</span>
+                        {poster.map((hex) => (
+                            <button key={hex} type="button" disabled={busy} title={`${t('Logoyu bu renge boya')} ${hex}`} aria-label={hex} onClick={() => run('tint', hex)}
+                                className="w-6 h-6 rounded-full border border-line-strong transition-transform hover:scale-110" style={{ background: hex }} />
+                        ))}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-xs text-fg-3 mr-0.5">{t('Arkasına zemin')}</span>
+                        {['#ffffff', ...poster.slice(0, 4)].map((hex) => (
+                            <button key={hex} type="button" title={`${t('Logonun arkasına bu renkte zemin koy')} ${hex}`} aria-label={hex} onClick={() => addPlate(hex)}
+                                className="w-6 h-6 rounded-md border border-line-strong transition-transform hover:scale-110" style={{ background: hex }} />
+                        ))}
+                    </div>
+                </>
+            )}
+        </Field>
     );
 }
 
@@ -276,10 +615,43 @@ function ToolPanel({ tool }) {
             {tool === 'image' && <ImageToolPanel />}
             {tool === 'sign' && <SignToolPanel />}
             {tool === 'note' && <Field label={t('Renk')}><ColorPicker value={opts.color} swatches={['#facc15', '#fb923c', '#4ade80', '#60a5fa', '#f472b6', '#c084fc']} onChange={(color) => set({ color })} /></Field>}
+            {tool === 'brand' && <BrandPanel />}
+            {tool === 'insert' && <InsertPanel />}
+            {tool === 'fix' && state.fix?.step === 'all' && <FixAllPanel key={state.fix.items.length + ':' + state.fix.pageIndex} fix={state.fix} />}
+            {tool === 'fix' && state.fix?.step !== 'all' && (
+                <div className="space-y-3 text-[13px] text-fg-2 leading-relaxed">
+                    <Button icon={Search} className="w-full" onClick={() => fixFindTexts(ed)}>{t('Tüm yazıları bul ve düzelt')}</Button>
+                    <Segmented value={opts.mode} onChange={(mode) => set({ mode })} options={[{ value: 'box', label: t('Kutu') }, { value: 'brush', label: t('Fırça') }]} />
+                    {opts.mode === 'brush' && <Slider label={t('Fırça boyutu')} value={opts.size} min={4} max={120} step={1} unit=" pt" onChange={(size) => set({ size })} />}
+                    <p>{opts.mode === 'brush'
+                        ? t('Bozuk yerin üstünü fırçayla boyayın (Shift: boyamaya ekle). Çapraz ya da kıvrık detaylarda kutudan daha az yer silinir. Bırakınca menü çıkar:')
+                        : t('Yapay zekâ görselindeki bozuk yeri (logo, yazı, fazlalık) fareyle kutu içine alın. Altında çıkan menüden seçin:')}</p>
+                    <ul className="space-y-1.5 text-xs">
+                        <li><b className="text-fg">{t('Sil')}</b> — {t('bozuk detay silinir, arkası doğal şekilde tamamlanır.')}</li>
+                        <li><b className="text-fg">{t('Yazıyı düzelt')}</b> — {t('yazı okunur, doğrusunu yazarsınız; marka fontuyla yerine gelir.')}</li>
+                        <li><b className="text-fg">{t('Logo koy')}</b> — {t('bozuk logo silinir, marka kitinizdeki logo aynı yere oturur.')}</li>
+                    </ul>
+                    <p className="text-xs text-fg-3">{t('Kutuyu nesnenin biraz dışından çizin; kenarlar zemin olarak kullanılır. Her işlem Ctrl+Z ile geri alınır.')}</p>
+                </div>
+            )}
             {tool === 'erase' && <EraseToolPanel opts={opts} set={set} />}
             {tool === 'grab' && <GrabToolPanel opts={opts} set={set} />}
             {tool === 'redact' && <RedactToolPanel opts={opts} set={set} />}
         </Section>
+    );
+}
+
+/** Yapay zekâ modellerinin nerede çalıştığı: GPU (adaptör) / CPU / Tarayıcı */
+function AccelInfo() {
+    const [b, setB] = useState(null);
+    useEffect(() => { getBackend().then(setB); }, []);
+    if (!b) return null;
+    const label = b.kind === 'gpu' ? `GPU (${b.adapter})` : b.kind === 'cpu' ? 'CPU' : t('Tarayıcı');
+    return (
+        <>
+            <dt className="text-fg-3">{t('Hızlandırma')}</dt>
+            <dd className="truncate" title={b.reason || label}>{label}{b.reason ? ' ⚠' : ''}</dd>
+        </>
     );
 }
 
@@ -293,6 +665,7 @@ function DocSummary() {
             <dt className="text-fg-3">{t('Sayfa')}</dt><dd className="tabular-nums">{state.page + 1} / {state.doc.pages.length}</dd>
             <dt className="text-fg-3">{t('Boyut')}</dt><dd className="tabular-nums">{mm(p.width)} × {mm(p.height)} mm</dd>
             <dt className="text-fg-3">Katman</dt><dd className="tabular-nums">{objCount}</dd>
+            <AccelInfo />
             <dt className="col-span-2 text-xs text-fg-3 pt-2 leading-relaxed">{t('Bir nesne seçin ya da soldan bir araç seçin.')} <kbd className="font-mono">?</kbd> kısayollar.</dt>
         </dl>
     );
@@ -300,13 +673,71 @@ function DocSummary() {
 
 function ImageDocActions() {
     const ed = useEditor();
-    const { dispatch } = ed;
+    const { state, dispatch } = ed;
+    const px = state.doc.imageSize ? Math.max(state.doc.imageSize.w, state.doc.imageSize.h) : 0;
     return (
         <div className="flex flex-col gap-2">
-            <Button variant="primary" icon={Layers} onClick={() => runMagicLayers(ed)}>{t('Sihirli Katmanlar')}</Button>
+            {px > 0 && px < 2000 && (
+                <div className="rounded-xl border border-accent/30 bg-accent-soft/50 p-2.5 space-y-2">
+                    <p className="text-xs text-fg-2 leading-relaxed">{t('Bu görsel')} {state.doc.imageSize.w} × {state.doc.imageSize.h} px. {t('Yapay zekâyla iki kat büyütüp netleştirirseniz kaydettiğiniz dosya keskin olur.')}</p>
+                    <Button variant="primary" icon={Sparkles} className="w-full" onClick={() => upscaleImageDoc(ed, 2)}>{t('Netleştir (2×)')}</Button>
+                </div>
+            )}
+            <AdjustPanel />
+            <Button variant={px > 0 && px < 2000 ? 'default' : 'primary'} icon={Layers} onClick={() => runMagicLayers(ed)}>{t('Sihirli Katmanlar')}</Button>
             <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: null } })}>{t('Arka planı kaldır')}</Button>
             <Button icon={ScanLine} onClick={() => dispatch({ type: 'SET', values: { dialog: 'scan' } })}>{t('Belge olarak tara')}</Button>
         </div>
+    );
+}
+
+// Hazır kırpma oranları (null: serbest)
+const CROP_RATIOS = [{ v: 0, label: 'Serbest' }, { v: 1, label: '1:1' }, { v: 4 / 5, label: '4:5' }, { v: 9 / 16, label: '9:16' }, { v: 16 / 9, label: '16:9' }];
+
+/** Fotoğraf ayarları ve kırpma (görsel belge) */
+function AdjustPanel() {
+    const ed = useEditor();
+    const { state, dispatch } = ed;
+    const page = state.doc.pages[state.page];
+    const a = state.adjust || NEUTRAL;
+    const setA = (k, v) => dispatch({ type: 'SET', values: { adjust: { ...a, [k]: v } } });
+    const crop = state.crop;
+    const startCrop = (ratio) => {
+        let w = page.width, h = page.height;
+        if (ratio) { if (w / h > ratio) w = h * ratio; else h = w / ratio; }
+        dispatch({ type: 'SET', values: { crop: { x: (page.width - w) / 2, y: (page.height - h) / 2, w, h, ratio: ratio || 0 } } });
+    };
+    const slider = (k, label, min, max) => <Slider label={t(label)} value={a[k]} min={min} max={max} onChange={(v) => setA(k, v)} format={(v) => (k === 'warmth' ? `${v > 0 ? '+' : ''}${v}` : `${v}%`)} />;
+    return (
+        <details className="rounded-xl border border-line p-2.5 group" open={!!state.adjust || !!crop}>
+            <summary className="cursor-pointer text-[13px] font-medium flex items-center gap-1.5 select-none"><SlidersHorizontal className="w-4 h-4" />{t('Ayarlar ve kırpma')}</summary>
+            <div className="space-y-3 mt-3">
+                {slider('brightness', 'Parlaklık', 50, 150)}
+                {slider('contrast', 'Kontrast', 50, 150)}
+                {slider('saturate', 'Doygunluk', 0, 200)}
+                {slider('warmth', 'Sıcaklık', -100, 100)}
+                {!isNeutral(state.adjust) && (
+                    <div className="grid grid-cols-2 gap-1.5">
+                        <Button size="sm" onClick={() => dispatch({ type: 'SET', values: { adjust: null } })}>{t('Sıfırla')}</Button>
+                        <Button size="sm" variant="primary" onClick={() => applyAdjust(ed, a)}>{t('Uygula')}</Button>
+                    </div>
+                )}
+                <Field label={t('Kırp')}>
+                    <div className="flex flex-wrap gap-1">
+                        {CROP_RATIOS.map((r) => (
+                            <button key={r.label} type="button" onClick={() => startCrop(r.v)}
+                                className={cx('h-7 px-2 rounded-md border text-xs', crop && crop.ratio === r.v ? 'border-accent bg-accent-soft' : 'border-line hover:bg-surface-2')}>{t(r.label)}</button>
+                        ))}
+                    </div>
+                    {crop && (
+                        <div className="grid grid-cols-2 gap-1.5">
+                            <Button size="sm" onClick={() => dispatch({ type: 'SET', values: { crop: null } })}>{t('Vazgeç')}</Button>
+                            <Button size="sm" variant="primary" icon={Crop} onClick={() => applyCrop(ed, crop)}>{t('Kırp')}</Button>
+                        </div>
+                    )}
+                </Field>
+            </div>
+        </details>
     );
 }
 
@@ -500,22 +931,69 @@ function RedactToolPanel({ opts, set }) {
     );
 }
 
+/** Geniş ekran mı (lg, 1024 px): değilse özellikler alttan açılan sayfada */
+function useWide() {
+    const q = '(min-width: 1024px)';
+    const [wide, setWide] = useState(() => window.matchMedia(q).matches);
+    useEffect(() => {
+        const m = window.matchMedia(q), on = () => setWide(m.matches);
+        m.addEventListener('change', on);
+        return () => m.removeEventListener('change', on);
+    }, []);
+    return wide;
+}
+
+/** Dar ekran: özellikler düğmesi ve alttan açılan sayfa; bir şey seçilince kendiliğinden açılır */
+function MobileSheet({ children }) {
+    const { state } = useEditor();
+    const [open, setOpen] = useState(false);
+    const selKey = state.selected?.id || '';
+    const [lastSel, setLastSel] = useState(selKey);
+    if (selKey !== lastSel) { setLastSel(selKey); if (selKey) setOpen(true); }
+    return (
+        <>
+            <button type="button" onClick={() => setOpen((o) => !o)} data-tour="inspector"
+                className="fixed right-3 bottom-[74px] md:bottom-4 z-40 h-10 px-4 rounded-full bg-accent text-white text-[13px] font-semibold shadow-pop inline-flex items-center gap-1.5">
+                <SlidersHorizontal className="w-4 h-4" />{t('Özellikler')}
+            </button>
+            {open && (
+                <div className="fixed inset-x-0 bottom-0 z-50 max-h-[62vh] bg-surface border-t border-line rounded-t-2xl shadow-pop flex flex-col">
+                    <div className="h-10 px-4 flex items-center justify-between border-b border-line shrink-0">
+                        <span className="text-xs font-semibold text-fg-2">{t('Özellikler')}</span>
+                        <button type="button" aria-label={t('Kapat')} onClick={() => setOpen(false)} className="w-8 h-8 -mr-2 flex items-center justify-center text-fg-2"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="overflow-y-auto scroll-thin pb-4">{children}</div>
+                </div>
+            )}
+        </>
+    );
+}
+
 export default function Inspector() {
     const { state } = useEditor();
+    const wide = useWide();
     const sel = state.selected && findObject(state.objects, state.selected.id);
     const editing = state.editing;
 
     let content;
     if (editing?.kind === 'line') content = <LineEditPanel editing={editing} />;
     else if (editing?.kind === 'image') content = <ImageEditPanel editing={editing} />;
+    else if (state.selected?.ids?.length > 1) content = <MultiPanel pageId={state.selected.pageId} ids={state.selected.ids} />;
     else if (sel) content = <ObjectPanel key={sel.obj.id} o={sel.obj} pageId={sel.pageId} />;
     else content = <ToolPanel tool={state.tool} />;
 
-    return (
-        <aside data-inspector className="w-[272px] shrink-0 bg-surface border-l border-line overflow-y-auto scroll-thin hidden lg:block">
-            <div className="h-10 px-4 flex items-center border-b border-line text-xs font-semibold text-fg-2">{t('Özellikler')}</div>
+    const body = (
+        <>
+            {!editing && !sel && !(state.selected?.ids?.length > 1) && <ToolIntro tool={state.tool} />}
             {content}
             {state.tool === 'select' && <LayersPanel />}
+        </>
+    );
+    if (!wide) return <MobileSheet>{body}</MobileSheet>;
+    return (
+        <aside data-inspector data-tour="inspector" className="w-[272px] shrink-0 bg-surface border-l border-line overflow-y-auto scroll-thin">
+            <div className="h-10 px-4 flex items-center border-b border-line text-xs font-semibold text-fg-2">{t('Özellikler')}</div>
+            {body}
         </aside>
     );
 }

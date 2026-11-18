@@ -1,18 +1,21 @@
 // Belge düzeyi eylemler (async). Her biri { dispatch, get } alır.
-import { PDFDocument } from 'pdf-lib';
-import { readPages, rebuildPages, rotateObjects, cloneObjects, newId } from '../core/pageOps';
+import { PDFDocument, rgb } from 'pdf-lib';
+import { readPages, rebuildPages, rotateObjects, cloneObjects, newId, resizePdfPage } from '../core/pageOps';
+import { resizeTransform, scaleObjects, scaleRects, exportSize } from '../core/pageSize';
 import { exportPdf } from '../core/export';
-import { renderPageToCanvas, releasePdfjsDoc } from '../core/render';
+import { renderPageToCanvas, renderPageSharp, releasePdfjsDoc } from '../core/render';
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import { saveFile, isDesktop } from '../platform';
+import { addRecent, thumbOf } from '../app/recent';
+import { serializeProject, parseProject, isProjectFile, PROJECT_EXT } from '../core/project';
 
 /** Web'de indirir, masaüstünde "Farklı kaydet" diyaloğu açar */
 export function downloadBlob(blob, name) {
     return saveFile(blob, name);
 }
 
-export const baseName = (name = 'belge') => name.replace(/\.(pdf|png|jpe?g|webp|gif|bmp)$/i, '');
+export const baseName = (name = 'belge') => name.replace(/\.(pdf|png|jpe?g|webp|gif|bmp|paperwell)$/i, '');
 
 /** Uzun işlemi meşgul göstergesiyle çalıştırır */
 export async function withBusy(ed, label, fn) {
@@ -28,7 +31,7 @@ export async function withBusy(ed, label, fn) {
     }
 }
 
-async function imageToPdf(file) {
+export async function imageToPdf(file) {
     const url = URL.createObjectURL(file);
     try {
         const img = new Image();
@@ -60,6 +63,7 @@ async function imageToPdf(file) {
 }
 
 export async function openFile(ed, file) {
+    if (isProjectFile(file)) { await openProject(ed, file); return; }
     const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
     const isImage = /^image\//.test(file.type);
     if (!isPdf && !isImage) {
@@ -85,14 +89,221 @@ export async function openFile(ed, file) {
         }
         const pages = await readPages(bytes);
         ed.dispatch({ type: 'LOAD', doc: { name: file.name, path: file.path || null, kind, bytes, pages, ...extra } });
+        rememberRecent(file, kind, bytes);
     });
 }
 
-export async function createBlank(ed) {
+async function openProject(ed, file) {
+    await withBusy(ed, t('Yükleniyor...'), async () => {
+        const p = await parseProject(new Uint8Array(await file.arrayBuffer())).catch((e) => { throw new Error(t(e.message)); });
+        ed.dispatch({ type: 'LOAD', ...p, doc: { ...p.doc, path: null, projectPath: file.path || null, projectName: file.name } });
+        rememberRecent(file, 'project', p.doc.bytes);
+    });
+}
+
+/** Geri yüklenen (otomatik kurtarma) proje: kaydedilmemiş sayılır */
+export async function restoreProject(ed, bytes) {
+    await withBusy(ed, t('Yükleniyor...'), async () => {
+        const p = await parseProject(bytes);
+        ed.dispatch({ type: 'LOAD', ...p, dirty: true });
+    });
+}
+
+/**
+ * Projeyi (.paperwell) kaydeder: belge ve üstündeki logolar, yazılar düzenlenebilir kalır.
+ * Daha önce proje olarak kaydedildiyse aynı dosyanın üzerine yazar (saveAs: yeni yer sorar).
+ */
+export async function saveProject(ed, { saveAs = false } = {}) {
+    const s = ed.get();
+    if (!s.doc) return;
+    await withBusy(ed, t('Proje kaydediliyor...'), async () => {
+        const bytes = await serializeProject(s);
+        const name = s.doc.projectName || `${baseName(s.doc.name)}.${PROJECT_EXT}`;
+        const usePath = isDesktop && !saveAs && s.doc.projectPath ? s.doc.projectPath : undefined;
+        const saved = await saveFile(new Blob([bytes], { type: 'application/x-paperwell' }), name, { path: usePath });
+        if (!saved) return;
+        if (typeof saved === 'string') {
+            const projectName = saved.split(/[\\/]/).pop();
+            ed.dispatch({ type: 'SET', values: { doc: { ...ed.get().doc, projectPath: saved, projectName } } });
+            const c = await renderPageToCanvas(s.doc.bytes, 0, 0.25, '#fff').catch(() => null);
+            addRecent({ path: saved, name: projectName, kind: 'project', thumb: c && (await thumbOf(await new Promise((r) => c.toBlob(r)))) });
+        }
+        ed.dispatch({ type: 'SAVED' });
+        toast(t('Proje kaydedildi; açınca logolar ve yazılar düzenlenebilir'), 'success', 3500);
+    });
+}
+
+/** Masaüstünde açılan dosyayı başlangıç ekranındaki "Son açılanlar"a ekler (küçük resmiyle) */
+async function rememberRecent(file, kind, bytes) {
+    if (!file.path) return;
+    let thumb = null;
+    if (kind === 'image') thumb = await thumbOf(file);
+    else {
+        try {
+            const c = await renderPageToCanvas(bytes, 0, 0.25, '#fff');
+            thumb = await thumbOf(await new Promise((r) => c.toBlob(r)));
+        } catch { /* küçük resimsiz */ }
+    }
+    addRecent({ path: file.path, name: file.name, kind, thumb });
+}
+
+const hexToRgb = (hex) => {
+    const n = parseInt((/^#?([0-9a-f]{6})$/i.exec(hex || '') || [])[1] || 'ffffff', 16);
+    return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+};
+
+/**
+ * Boş belge. Boyut PDF noktasıyla (varsayılan A4). pixelSize ({ w, h }): piksel ön ayarlarında
+ * PNG'nin tam piksel boyutu için belgeye yazılır. Argümansız çağrı eskisi gibi beyaz A4 açar.
+ */
+export async function createBlank(ed, { width = 595.28, height = 841.89, background = '#ffffff', label, pixelSize } = {}) {
     const doc = await PDFDocument.create();
-    doc.addPage([595.28, 841.89]);
+    const page = doc.addPage([width, height]);
+    // arka planı her zaman çiz: içeriksiz sayfa sonradan gömülemez / boyutu değiştirilemez
+    page.drawRectangle({ x: 0, y: 0, width, height, color: hexToRgb(background) });
     const bytes = await doc.save();
-    ed.dispatch({ type: 'LOAD', doc: { name: 'Yeni belge.pdf', kind: 'pdf', bytes, pages: await readPages(bytes) } });
+    const name = label ? `${label.replace(/[\\/:*?"<>|]/g, '-')}.pdf` : 'Yeni belge.pdf';
+    ed.dispatch({ type: 'LOAD', doc: { name, kind: 'pdf', bytes, pages: await readPages(bytes), background, pixelSize } });
+}
+
+/**
+ * Geçerli sayfanın boyutunu değiştirir (tek geri alma adımı).
+ * fit: içerik ve nesneler sığacak kadar tek tip ölçeklenir; değilse boyutu aynı kalır. İkisi de ortalanır.
+ */
+export async function resizeCurrentPage(ed, { width, height, pixelSize, fit = true, background = '#ffffff' }) {
+    await withBusy(ed, t('Boyut değiştiriliyor...'), async () => {
+        const s = ed.get();
+        const idx = s.page;
+        const old = s.doc.pages[idx];
+        const { k, dx, dy } = resizeTransform(old.width, old.height, width, height, fit);
+        const docChanges = { pixelSize };
+        let bytes;
+        if (s.doc.kind === 'image') {
+            // raster sayfa: görsel yeni tuvale ölçeklenip ortalanır, tek sayfalık PDF yeniden kurulur (Sihirli Katmanlar'daki gibi)
+            const base = (s.doc.imageSize?.w || old.width) / old.width; // piksel / pt
+            const longest = Math.max(width, height) * base;
+            const np = longest > 8000 ? (base * 8000) / longest : base;
+            const cw = pixelSize ? pixelSize.w : Math.round(width * np), ch = pixelSize ? pixelSize.h : Math.round(height * np);
+            const src = await renderPageToCanvas(s.doc.bytes, idx, base, 'transparent');
+            const c = document.createElement('canvas');
+            c.width = cw; c.height = ch;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = background;
+            ctx.fillRect(0, 0, cw, ch);
+            ctx.imageSmoothingQuality = 'high';
+            const ix = (dx / width) * cw, iy = (dy / height) * ch, iw = ((old.width * k) / width) * cw, ih = ((old.height * k) / height) * ch;
+            ctx.drawImage(src, ix, iy, iw, ih);
+            if (fit === 'extend') await extendEdges(c, ix, iy, iw, ih);
+            const png = s.doc.mime === 'image/png';
+            const blob = await new Promise((r) => c.toBlob(r, png ? 'image/png' : 'image/jpeg', 0.95));
+            const img = new Uint8Array(await blob.arrayBuffer());
+            const one = await PDFDocument.create();
+            const emb = png ? await one.embedPng(img) : await one.embedJpg(img);
+            one.addPage([width, height]).drawImage(emb, { x: 0, y: 0, width, height });
+            const fromDoc = await PDFDocument.load(await one.save());
+            const plan = s.doc.pages.map((p, i) => (i === idx ? { fromDoc, srcIndex: 0, id: p.id } : { srcIndex: i, id: p.id }));
+            bytes = await rebuildPages(s.doc.bytes, plan);
+            docChanges.imageSize = { w: cw, h: ch };
+        } else {
+            bytes = await resizePdfPage(s.doc.bytes, idx, { width, height, k, dx, dy, background });
+        }
+        docChanges.background = background;
+        const pages = await readPages(bytes, s.doc.pages.map((p) => p.id));
+        const objects = { ...s.objects, [old.id]: scaleObjects(s.objects[old.id], k, dx, dy) };
+        const redactions = s.redactions?.[old.id]?.length ? { ...s.redactions, [old.id]: scaleRects(s.redactions[old.id], k, dx, dy) } : undefined;
+        ed.dispatch({ type: 'COMMIT', bytes, pages, objects, redactions, docChanges });
+        toast(t('Boyut değişti'), 'success');
+    });
+}
+
+/**
+ * Görsel belgeyi yapay zekâyla 2 kat büyütür (sayfa boyutu aynı kalır, piksel sayısı artar): kaydedince
+ * görsel keskin, eklenen logo ve yazılar da iki kat çözünürlükte çıkar. Tek geri alma adımı.
+ */
+export async function upscaleImageDoc(ed, scale = 2) {
+    const { isUpscalerCached, loadUpscaler, upscaleCanvas } = await import('../core/upscale');
+    if (!(await isUpscalerCached()) && !window.confirm(`${t('Netleştirme modeli indirilecek. Bir kez iner, sonra çevrimdışı çalışır.')} (~5 MB)`)) return;
+    await withBusy(ed, t('Görsel netleştiriliyor...'), async (progress) => {
+        await loadUpscaler((p) => progress(p * 0.1, `${t('Model indiriliyor')} ${Math.round((p || 0) * 100)}%`));
+        const s = ed.get();
+        const page = s.doc.pages[s.page];
+        const base = (s.doc.imageSize?.w || page.width) / page.width;
+        if (Math.max(page.width, page.height) * base * scale > 8000) throw new Error(t('Görsel zaten çok büyük; daha fazla büyütülemez'));
+        const src = await renderPageToCanvas(s.doc.bytes, s.page, base, 'transparent');
+        const t0 = performance.now();
+        const big = await upscaleCanvas(src, scale, (p) => progress(0.1 + p * 0.85, `${t('Görsel netleştiriliyor...')} ${Math.round(p * 100)}%`));
+        const png = s.doc.mime === 'image/png' || s.doc.mime === undefined;
+        const blob = await new Promise((r) => big.toBlob(r, png ? 'image/png' : 'image/jpeg', 0.95));
+        const img = new Uint8Array(await blob.arrayBuffer());
+        const one = await PDFDocument.create();
+        const emb = png ? await one.embedPng(img) : await one.embedJpg(img);
+        one.addPage([page.width, page.height]).drawImage(emb, { x: 0, y: 0, width: page.width, height: page.height });
+        const fromDoc = await PDFDocument.load(await one.save());
+        const plan = s.doc.pages.map((p, i) => (i === s.page ? { fromDoc, srcIndex: 0, id: p.id } : { srcIndex: i, id: p.id }));
+        const bytes = await rebuildPages(s.doc.bytes, plan);
+        const pages = await readPages(bytes, s.doc.pages.map((p) => p.id));
+        ed.dispatch({ type: 'COMMIT', bytes, pages, docChanges: { imageSize: { w: big.width, h: big.height } } });
+        toast(`${t('Görsel netleştirildi')}: ${big.width} × ${big.height} px (${Math.round((performance.now() - t0) / 100) / 10} sn)`, 'success', 5000);
+    });
+}
+
+/** Görselin dışında kalan boşluğu (yeni oranın kenarları) görselin devamıyla doldurur: düz/degrade zemin analitik, kalanı yapay zekâ */
+async function extendEdges(c, ix, iy, iw, ih) {
+    const W = c.width, H = c.height, ctx = c.getContext('2d', { willReadFrequently: true });
+    const img = ctx.getImageData(0, 0, W, H);
+    // görselin kenarındaki 2 px'lik yumuşak geçiş de doldurulsun (dikiş görünmesin)
+    const x0 = Math.ceil(ix) + 2, y0 = Math.ceil(iy) + 2, x1 = Math.floor(ix + iw) - 2, y1 = Math.floor(iy + ih) - 2;
+    const mask = new Uint8Array(W * H);
+    let n = 0;
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (x < x0 || x >= x1 || y < y0 || y >= y1) { mask[y * W + x] = 1; n++; }
+    if (!n) return;
+    const { fillHoles } = await import('../core/magicLayers');
+    const { isLamaCached } = await import('../core/inpaint/lama');
+    await fillHoles(img.data, W, H, mask, { best: await isLamaCached() });
+    ctx.putImageData(img, 0, 0);
+}
+
+/** Geçerli sayfanın dışa aktarılacak tuvali: piksel ön ayarlarında tam piksel boyutunda, diğerlerinde 2 kat (CSS px) */
+export async function renderExportCanvas(ed) {
+    const s = ed.get();
+    const out = await buildOutputPdf(ed);
+    const page = s.doc.pages[s.page];
+    const target = exportSize(page.width, page.height, s.doc.pixelSize);
+    let canvas = await renderPageSharp(out, s.page, target.scale, '#fff');
+    if (canvas.width !== target.w || canvas.height !== target.h) {
+        // yuvarlama farkı: tam piksel boyutuna getir
+        const c = document.createElement('canvas');
+        c.width = target.w; c.height = target.h;
+        c.getContext('2d').drawImage(canvas, 0, 0, target.w, target.h);
+        canvas = c;
+    }
+    return canvas;
+}
+
+/**
+ * Tuvali dosyaya çevirir. 'jpg': paylaşım için küçük dosya; kalite 1 MB altına inene kadar düşürülür
+ * (WhatsApp ve Instagram bu boyutta yeniden sıkıştırmaz ya da az sıkıştırır).
+ * @returns {Promise<{blob: Blob, ext: string}>}
+ */
+export async function encodeCanvas(canvas, format = 'png') {
+    if (format !== 'jpg') return { blob: await new Promise((r) => canvas.toBlob(r, 'image/png')), ext: 'png' };
+    let q = 0.92, blob;
+    do {
+        blob = await new Promise((r) => canvas.toBlob(r, 'image/jpeg', q));
+        q -= 0.08;
+    } while (blob.size > 1_000_000 && q >= 0.5);
+    return { blob, ext: 'jpg' };
+}
+
+/** Geçerli sayfayı görsel olarak indirir (PNG ya da paylaşım için küçük JPG) */
+export async function exportPng(ed, { format = 'png' } = {}) {
+    const s = ed.get();
+    if (!s.doc) return;
+    await withBusy(ed, t('İşleniyor...'), async () => {
+        const { blob, ext } = await encodeCanvas(await renderExportCanvas(ed), format);
+        const saved = await saveFile(blob, `${baseName(s.doc.name)}.${ext}`);
+        if (saved) toast(isDesktop ? t('Kaydedildi') : t('İndirildi'), 'success');
+    });
 }
 
 /** İçerik değişikliği (sayfa sayısı aynı): sayfa kimlikleri korunur */
@@ -115,22 +326,39 @@ export async function buildOutputPdf(ed) {
 }
 
 /**
+ * Görsel belgeyi piksel olarak çizer: görselin kendisi birebir (yeniden örneklenmeden) çizilir, eklenen
+ * logo ve yazılar ayrı bir katmanda süper örneklenip üstüne konur; böylece hem görsel bozulmaz hem logolar net kalır.
+ */
+export async function renderImageDoc(s, k) {
+    const page = s.doc.pages[0], bg = s.doc.mime === 'image/jpeg' ? '#fff' : 'transparent';
+    if (page.rotate) return renderPageSharp(await exportPdf(s.doc.bytes, s.doc.pages, s.objects), 0, k, bg);
+    const canvas = await renderPageToCanvas(s.doc.bytes, 0, k, bg);
+    if (!s.objects[page.id]?.length) return canvas;
+    const blank = await PDFDocument.create();
+    blank.addPage([page.width, page.height]);
+    const layer = await exportPdf(await blank.save(), s.doc.pages, s.objects);
+    canvas.getContext('2d').drawImage(await renderPageSharp(layer, 0, k, 'transparent'), 0, 0, canvas.width, canvas.height);
+    return canvas;
+}
+
+/**
  * Kaydet / indir. Masaüstünde açılan PDF'in üzerine kaydeder (saveAs ile farklı kaydet);
  * web'de indirir. Görseller her zaman yeni dosyaya kaydedilir.
  */
-export async function download(ed, { saveAs = false } = {}) {
+export async function download(ed, { saveAs = false, scale = 1 } = {}) {
     const s = ed.get();
     if (!s.doc) return;
     await withBusy(ed, t('İşleniyor...'), async () => {
-        const out = await buildOutputPdf(ed);
         let saved;
         if (s.doc.kind === 'image') {
-            const k = (s.doc.imageSize?.w || s.doc.pages[0].width) / s.doc.pages[0].width;
-            const canvas = await renderPageToCanvas(out, 0, k, s.doc.mime === 'image/jpeg' ? '#fff' : 'transparent');
+            // scale > 1: görsel büyütülür, eklenen logo/yazılar kendi çözünürlüklerinden net çizilir
+            const k = ((s.doc.imageSize?.w || s.doc.pages[0].width) / s.doc.pages[0].width) * scale;
+            const canvas = await renderImageDoc(s, k);
             const jpeg = s.doc.mime === 'image/jpeg';
             const blob = await new Promise((r) => canvas.toBlob(r, jpeg ? 'image/jpeg' : 'image/png', 0.95));
-            saved = await saveFile(blob, `${baseName(s.doc.name)}-paperwell.${jpeg ? 'jpg' : 'png'}`);
+            saved = await saveFile(blob, `${baseName(s.doc.name)}-paperwell${scale > 1 ? `-${scale}x` : ''}.${jpeg ? 'jpg' : 'png'}`);
         } else {
+            const out = await buildOutputPdf(ed);
             const usePath = isDesktop && !saveAs && s.doc.path ? s.doc.path : undefined;
             saved = await saveFile(out, `${baseName(s.doc.name)}.pdf`, { path: usePath });
             if (saved && typeof saved === 'string') {
@@ -139,6 +367,11 @@ export async function download(ed, { saveAs = false } = {}) {
             }
         }
         if (!saved) return;
+        // görsel düz PNG/JPG olarak yazıldı: eklenen logolar ve yazılar sonradan düzenlenebilsin diye proje dosyası hatırlatılır
+        if (s.doc.kind === 'image' && Object.values(s.objects).some((l) => l?.length) && !s.doc.projectPath) {
+            toast(t("Görsel kaydedildi. Logoları ve yazıları sonra da düzenlemek için menüden Projeyi kaydet'i kullanın."), 'success', 6000);
+            return;
+        }
         ed.dispatch({ type: 'SAVED' });
         toast(isDesktop ? t('Kaydedildi') : t('İndirildi'), 'success');
     });

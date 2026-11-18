@@ -6,7 +6,8 @@ export async function readImageFile(file, maxSide = 2400) {
         img.src = url;
         await img.decode();
         let w = img.naturalWidth || 300, h = img.naturalHeight || 150;
-        const k = Math.min(1, maxSide / Math.max(w, h));
+        // SVG vektördür: küçük çizilmiş logolar bulanık kalmasın diye büyük çözünürlükte rasterlenir
+        const k = file.type === 'image/svg+xml' ? Math.min(maxSide, 1600) / Math.max(w, h) : Math.min(1, maxSide / Math.max(w, h));
         w = Math.round(w * k); h = Math.round(h * k);
         const c = document.createElement('canvas');
         c.width = w; c.height = h;

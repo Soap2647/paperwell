@@ -138,7 +138,7 @@ function LineEditor({ entry, index, geom, editing, zoom }) {
     const generic = line.font.mono ? 'monospace' : line.font.serif ? 'serif' : 'sans-serif';
     const fontFamily = style.family === 'original'
         ? `${pdfFont ? `"${pdfFont}", ` : ''}${line.font.mono ? FONT_FAMILIES.mono.css : line.font.serif ? FONT_FAMILIES.serif.css : FONT_FAMILIES.sans.css}, ${generic}`
-        : FONT_FAMILIES[style.family].css;
+        : (FONT_FAMILIES[style.family] || FONT_FAMILIES.sans).css;
 
     const finish = async (save) => {
         if (done.current) return;
