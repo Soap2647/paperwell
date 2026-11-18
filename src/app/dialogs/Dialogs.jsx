@@ -16,6 +16,7 @@ import BgRemoveDialog from './BgRemoveDialog';
 import ScanDialog from './ScanDialog';
 import SocialExportDialog from './SocialExportDialog';
 import BatchDialog from './BatchDialog';
+import PreflightDialog from './PreflightDialog';
 import NewDesignDialog from './NewDesignDialog';
 
 function PositionGrid({ value, onChange, positions }) {
@@ -271,6 +272,7 @@ export default function Dialogs() {
             <NewDesignDialog open={d === 'newdesign' || d === 'resize'} mode={d === 'resize' ? 'resize' : 'new'} onClose={close} />
             <SocialExportDialog open={d === 'social'} onClose={close} />
             <BatchDialog open={d === 'batch'} onClose={close} />
+            <PreflightDialog open={d === 'preflight'} onClose={close} />
             <SignatureDialog
                 open={d === 'signature'}
                 onClose={close}

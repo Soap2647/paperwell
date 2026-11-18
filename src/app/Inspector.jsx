@@ -32,8 +32,8 @@ import { runMagicLayers, runMagicLayersOnObject } from './magicLayersAction';
 import { readImageFile } from './imageFiles';
 import { logoEdit } from '../core/logoTools';
 import { effectCss } from '../core/textEffects';
-import { contrast, hexRgb } from '../core/placement';
-import { useBackdrop, sampleBackdrop } from './backdrop';
+import { useBackdrop } from './backdrop';
+import { readabilityIssue } from './quality';
 import { useBrandKit } from '../core/brandKit';
 import { loadSignatures, saveSignatures } from './dialogs/SignatureDialog';
 
@@ -464,46 +464,19 @@ function TextEffects({ o, update, live, checkpoint }) {
     );
 }
 
-// Logonun görünür piksellerinin ortalama rengi (okunabilirlik için; src başına bir kez hesaplanır)
-const logoColorCache = new Map();
-function logoColor(src) {
-    if (!logoColorCache.has(src)) {
-        logoColorCache.set(src, (async () => {
-            const img = new Image(); img.src = src; await img.decode();
-            const k = 64 / Math.max(img.naturalWidth, img.naturalHeight);
-            const c = document.createElement('canvas');
-            c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
-            const g = c.getContext('2d'); g.drawImage(img, 0, 0, c.width, c.height);
-            const d = g.getImageData(0, 0, c.width, c.height).data, sum = [0, 0, 0];
-            let n = 0;
-            for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 128) { sum[0] += d[i]; sum[1] += d[i + 1]; sum[2] += d[i + 2]; n++; }
-            // saydamlığı olmayan (zeminli) görsel kendi zeminiyle okunur: denetlenmez
-            return n && n < (d.length / 4) * 0.97 ? sum.map((v) => v / n) : null;
-        })().catch(() => null));
-    }
-    return logoColorCache.get(src);
-}
-
-/**
- * Okunabilirlik: yazı ya da logo zemininde kayboluyorsa uyarır ve tek tıkla düzeltme önerir.
- * Eşikler: yazı için kontrast < 2.5, logo için < 1.6 (logolarda renk çeşitliliği ortalamayı yumuşatır).
- */
+/** Okunabilirlik: yazı ya da logo zemininde kayboluyorsa uyarır ve tek tıkla düzeltme önerir */
 function Readability({ o, update }) {
     const { state } = useEditor();
     const bd = useBackdrop(state);
-    const [logoFg, setLogoFg] = useState(null);
-    const isLogo = o.type === 'image' && !o.qr && !o.signature && o.w * o.h < state.doc.pages[state.page].width * state.doc.pages[state.page].height * 0.6;
-    useEffect(() => { let live = true; if (isLogo) logoColor(o.src).then((c) => live && setLogoFg(c)); return () => { live = false; }; }, [isLogo, o.src]);
-    if (!bd) return null;
-    const bg = sampleBackdrop(bd, bbox(o));
-    let fg = null, limit = 2.5;
-    if (o.type === 'text') {
-        if (o.outline && contrast(hexRgb(o.outline.color), bg) >= 3) return null;
-        fg = o.gradient ? hexRgb(o.gradient.from).map((v, i) => (v + hexRgb(o.gradient.to)[i]) / 2) : hexRgb(o.color);
-    } else if (isLogo && logoFg) { fg = logoFg; limit = 1.6; }
-    if (!fg || contrast(fg, bg) >= limit) return null;
-    const light = contrast([255, 255, 255], bg) >= contrast([17, 24, 39], bg);
-    const best = light ? '#ffffff' : '#111827';
+    const page = state.doc.pages[state.page];
+    const [issue, setIssue] = useState(null);
+    useEffect(() => {
+        let live = true;
+        if (bd) readabilityIssue(o, bd, page).then((r) => live && setIssue(r));
+        return () => { live = false; };
+    }, [bd, o, page]);
+    if (!issue) return null;
+    const { light, best } = issue;
     const fixText = (changes) => update({ ...changes, gradient: undefined });
     const tint = async (hex) => { const ch = await logoEdit(o, 'tint', hex).catch(() => null); if (ch) update(o.origSrc ? ch : { ...ch, origSrc: o.src }); };
     return (

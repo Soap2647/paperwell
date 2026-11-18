@@ -1,6 +1,6 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles, Images, Lightbulb,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles, Images, Lightbulb, ShieldCheck,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { download, exportPng, saveProject, upscaleImageDoc } from '../store/actions';
@@ -126,6 +126,8 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                 )}
                 <Menu trigger={<span data-tour="tools-menu"><Tooltip label={t('Belge araçları')}><Button variant="ghost" icon={Wrench} className="hidden lg:inline-flex">{t('Belge araçları')}</Button></Tooltip><IconButton icon={Wrench} label={t('Belge araçları')} className="lg:hidden" /></span>} items={toolItems} align="right" />
                 <IconButton icon={Printer} label={t('Yazdır')} shortcut="Ctrl+P" onClick={() => open('print')} />
+                <Button variant="ghost" data-tour="preflight" icon={ShieldCheck} onClick={() => open('preflight')} className="hidden xl:inline-flex">{t('Kontrol et')}</Button>
+                <IconButton icon={ShieldCheck} label={t('Yayına hazır mı?')} onClick={() => open('preflight')} className="xl:hidden" />
                 <Menu trigger={<IconButton icon={MoreHorizontal} label="Menu" />} items={moreItems} align="right" />
                 <Button variant="primary" data-tour="save" icon={Download} onClick={() => download(ed)} className="ml-1">
                     <span className="hidden sm:inline">{isImage ? t('PNG olarak indir') : isDesktop ? t('Kaydet') : t('İndir')}</span>
