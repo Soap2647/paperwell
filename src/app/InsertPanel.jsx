@@ -1,7 +1,7 @@
 // "Ekle" paneli: QR kod (kayıt linki) ve etkinlik bilgi bloğu (tarih, saat, yer). Afişin boş bir yerine,
 // zemine göre okunaklı renkte yerleşir.
 import { useState } from 'react';
-import { QrCode, CalendarDays } from 'lucide-react';
+import { QrCode, CalendarDays, LayoutTemplate } from 'lucide-react';
 import QRCode from 'qrcode';
 import { useEditor } from '../store/editor';
 import { newId } from '../core/pageOps';
@@ -10,6 +10,9 @@ import { Button, Field, Segmented } from '../components/ui';
 import { toast } from '../components/Toaster';
 import { t } from '../i18n';
 import { smartSpot, getBackdrop, sampleBackdrop } from './backdrop';
+import { LAYOUTS, buildLayout } from './layouts';
+import { useBrandKit } from '../core/brandKit';
+import { usePalette } from '../core/paletteStore';
 
 const inputCls = 'w-full h-9 rounded-lg border border-line bg-surface-2 px-2.5 text-[13px] focus:outline-none focus:border-accent';
 
@@ -27,6 +30,22 @@ export default function InsertPanel() {
     const [link, setLink] = useState('');
     const [qrBg, setQrBg] = useState('white');
     const [ev, setEv] = useState({ date: '', time: '', place: '', link: '' });
+    const kit = useBrandKit();
+    const palette = usePalette();
+    const addLayout = async (id) => {
+        const qr = id === 'qr-corner' && link.trim() ? await qrSrc(link.trim(), false) : undefined;
+        const objs = await buildLayout(id, { state: ed.get(), assets: kit.assets, palette, qr });
+        if (objs.length) commit(objs);
+        // ortalı yazıların genişliği çizilince ölçülür: ölçüden sonra sayfanın ortasına çekilir
+        const centered = objs.filter((o) => o.type === 'text' && o.align === 'center').map((o) => o.id);
+        if (centered.length) setTimeout(() => {
+            const s = ed.get(), pg = s.doc.pages[s.page];
+            const list = (s.objects[pg.id] || []).filter((o) => centered.includes(o.id));
+            dispatch({ type: 'UPDATE_OBJECTS', updates: list.map((o) => ({ id: o.id, changes: { x: (pg.width - o.w) / 2 } })), transient: true });
+        }, 200);
+        if (id === 'qr-corner' && !qr) toast(t('QR yerine boş kutu kondu; yukarıya linki yazıp tekrar deneyin'), 'info', 4500);
+        else toast(t('Yerleşim eklendi; yazılara çift tıklayıp değiştirin'), 'success', 3500);
+    };
 
     const commit = (objs) => {
         const s = ed.get();
@@ -73,6 +92,18 @@ export default function InsertPanel() {
                 <Button variant="primary" icon={QrCode} className="w-full" onClick={addQr}>{t('QR kodu ekle')}</Button>
             </Field>
 
+            <Field label={t('Hazır yerleşimler')} hint={t('Tek tıkla düzgün bir düzen. Yazılar örnektir; çift tıklayıp kendi metninizi yazın.')}>
+                <div className="grid grid-cols-2 gap-1.5">
+                    {LAYOUTS.map((l) => (
+                        <button key={l.id} type="button" onClick={() => addLayout(l.id)} title={t(l.hint)}
+                            className="rounded-lg border border-line p-2 text-left hover:border-accent hover:bg-surface-2">
+                            <LayoutPreview id={l.id} />
+                            <span className="block text-[12px] font-medium mt-1.5 leading-tight">{t(l.name)}</span>
+                        </button>
+                    ))}
+                </div>
+            </Field>
+
             <Field label={t('Etkinlik bilgisi')} hint={t('Tarih, saat ve yer marka fontunuzla, afişin boş bir yerine ve zemine göre okunaklı renkte eklenir.')}>
                 <div className="grid grid-cols-2 gap-1.5">
                     <input value={ev.date} onChange={(e) => setEv({ ...ev, date: e.target.value })} placeholder={t('Tarih (ör. 24 Kasım)')} className={inputCls} />
@@ -83,5 +114,18 @@ export default function InsertPanel() {
                 <Button variant="primary" icon={CalendarDays} className="w-full" onClick={addEvent}>{t('Bilgi bloğunu ekle')}</Button>
             </Field>
         </div>
+    );
+}
+
+/** Yerleşimin küçük şeması */
+function LayoutPreview({ id }) {
+    const bar = 'absolute bg-fg-3/60 rounded-[1px]';
+    return (
+        <span className="relative block w-full aspect-square rounded bg-gradient-to-b from-indigo-900 to-indigo-600 overflow-hidden">
+            {id === 'logo-strip' && <><span className="absolute inset-x-0 bottom-0 h-[16%] bg-black/60" />{[0, 1, 2].map((i) => <span key={i} className="absolute bottom-[4%] h-[8%] w-[18%] bg-white/80 rounded-[1px]" style={{ left: `${12 + i * 28}%` }} />)}</>}
+            {id === 'info-bottom' && <><span className={bar} style={{ left: '8%', bottom: '26%', width: '45%', height: '10%', background: 'white' }} /><span className={bar} style={{ left: '8%', bottom: '17%', width: '55%', height: '5%', background: 'white' }} /><span className={bar} style={{ left: '8%', bottom: '9%', width: '40%', height: '5%', background: 'white' }} /></>}
+            {id === 'title-top' && <><span className={bar} style={{ left: '12%', top: '8%', width: '76%', height: '13%', background: 'white' }} /><span className={bar} style={{ left: '25%', top: '25%', width: '50%', height: '5%', background: 'white' }} /></>}
+            {id === 'qr-corner' && <><span className="absolute right-[8%] bottom-[18%] w-[24%] aspect-square bg-white rounded-[1px]" /><span className={bar} style={{ right: '6%', bottom: '8%', width: '28%', height: '5%', background: 'white' }} /></>}
+        </span>
     );
 }
