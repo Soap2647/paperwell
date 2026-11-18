@@ -15,6 +15,8 @@ import RedactLayer from './layers/RedactLayer';
 import SearchLayer from './layers/SearchLayer';
 import FormLayer from './layers/FormLayer';
 import GuideLayer from './layers/GuideLayer';
+import CropLayer from './layers/CropLayer';
+import { cssFilter } from './adjustActions';
 import { t } from '../i18n';
 
 function PageView({ page, index, zoom, scrollRoot }) {
@@ -99,7 +101,7 @@ function PageView({ page, index, zoom, scrollRoot }) {
             style={{ width: w, height: h, boxShadow: 'var(--page-shadow)' }}
             data-page-index={index}
         >
-            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ opacity: rendered ? 1 : 0 }} />
+            <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ opacity: rendered ? 1 : 0, filter: state.adjust && index === state.page && !state.compare ? cssFilter(state.adjust) : undefined }} />
             {!rendered && <div className="absolute inset-0 skeleton opacity-60" />}
 
             {/* Katmanlar: sayfa birimlerinde, zoom ile ölçeklenir */}
@@ -117,6 +119,7 @@ function PageView({ page, index, zoom, scrollRoot }) {
                 {tool === 'erase' && <EraseLayer {...layerProps} />}
                 {tool === 'grab' && <GrabLayer {...layerProps} />}
                 {tool === 'fix' && <FixLayer {...layerProps} />}
+                {state.crop && index === state.page && <CropLayer {...layerProps} />}
             </div>
             {!state.compare && state.safeArea !== false && Math.abs(page.width / page.height - 9 / 16) < 0.01 && (
                 <StorySafeArea h={h} onHide={() => dispatch({ type: 'SET', values: { safeArea: false } })} />

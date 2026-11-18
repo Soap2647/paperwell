@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
     Bold, Italic, AlignLeft, AlignCenter, AlignRight, Trash2, Copy, ArrowUp, ArrowDown, Square, Circle, Minus, MoveRight,
     Pen, Highlighter, Underline, Strikethrough, ImageUp, Plus, Check, X, Download, Sparkles, Zap, Search, ImageMinus, ScanLine, Layers,
-    Group, Ungroup, Rows3, AlignHorizontalSpaceAround, AlignVerticalSpaceAround, Paintbrush, Eraser, Crop, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
+    Group, Ungroup, Rows3, SlidersHorizontal, AlignHorizontalSpaceAround, AlignVerticalSpaceAround, Paintbrush, Eraser, Crop, AlignStartVertical, AlignCenterVertical, AlignEndVertical, AlignStartHorizontal, AlignCenterHorizontal, AlignEndHorizontal,
 } from 'lucide-react';
 import { bbox, moveBy } from './objects';
 import { useEditor, findObject } from '../store/editor';
@@ -34,6 +34,7 @@ import { logoEdit } from '../core/logoTools';
 import { effectCss } from '../core/textEffects';
 import { useBackdrop } from './backdrop';
 import { readabilityIssue } from './quality';
+import { NEUTRAL, isNeutral, applyAdjust, applyCrop } from './adjustActions';
 import { useBrandKit } from '../core/brandKit';
 import { loadSignatures, saveSignatures } from './dialogs/SignatureDialog';
 
@@ -652,10 +653,61 @@ function ImageDocActions() {
                     <Button variant="primary" icon={Sparkles} className="w-full" onClick={() => upscaleImageDoc(ed, 2)}>{t('Netleştir (2×)')}</Button>
                 </div>
             )}
+            <AdjustPanel />
             <Button variant={px > 0 && px < 2000 ? 'default' : 'primary'} icon={Layers} onClick={() => runMagicLayers(ed)}>{t('Sihirli Katmanlar')}</Button>
             <Button icon={ImageMinus} onClick={() => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: null } })}>{t('Arka planı kaldır')}</Button>
             <Button icon={ScanLine} onClick={() => dispatch({ type: 'SET', values: { dialog: 'scan' } })}>{t('Belge olarak tara')}</Button>
         </div>
+    );
+}
+
+// Hazır kırpma oranları (null: serbest)
+const CROP_RATIOS = [{ v: 0, label: 'Serbest' }, { v: 1, label: '1:1' }, { v: 4 / 5, label: '4:5' }, { v: 9 / 16, label: '9:16' }, { v: 16 / 9, label: '16:9' }];
+
+/** Fotoğraf ayarları ve kırpma (görsel belge) */
+function AdjustPanel() {
+    const ed = useEditor();
+    const { state, dispatch } = ed;
+    const page = state.doc.pages[state.page];
+    const a = state.adjust || NEUTRAL;
+    const setA = (k, v) => dispatch({ type: 'SET', values: { adjust: { ...a, [k]: v } } });
+    const crop = state.crop;
+    const startCrop = (ratio) => {
+        let w = page.width, h = page.height;
+        if (ratio) { if (w / h > ratio) w = h * ratio; else h = w / ratio; }
+        dispatch({ type: 'SET', values: { crop: { x: (page.width - w) / 2, y: (page.height - h) / 2, w, h, ratio: ratio || 0 } } });
+    };
+    const slider = (k, label, min, max) => <Slider label={t(label)} value={a[k]} min={min} max={max} onChange={(v) => setA(k, v)} format={(v) => (k === 'warmth' ? `${v > 0 ? '+' : ''}${v}` : `${v}%`)} />;
+    return (
+        <details className="rounded-xl border border-line p-2.5 group" open={!!state.adjust || !!crop}>
+            <summary className="cursor-pointer text-[13px] font-medium flex items-center gap-1.5 select-none"><SlidersHorizontal className="w-4 h-4" />{t('Ayarlar ve kırpma')}</summary>
+            <div className="space-y-3 mt-3">
+                {slider('brightness', 'Parlaklık', 50, 150)}
+                {slider('contrast', 'Kontrast', 50, 150)}
+                {slider('saturate', 'Doygunluk', 0, 200)}
+                {slider('warmth', 'Sıcaklık', -100, 100)}
+                {!isNeutral(state.adjust) && (
+                    <div className="grid grid-cols-2 gap-1.5">
+                        <Button size="sm" onClick={() => dispatch({ type: 'SET', values: { adjust: null } })}>{t('Sıfırla')}</Button>
+                        <Button size="sm" variant="primary" onClick={() => applyAdjust(ed, a)}>{t('Uygula')}</Button>
+                    </div>
+                )}
+                <Field label={t('Kırp')}>
+                    <div className="flex flex-wrap gap-1">
+                        {CROP_RATIOS.map((r) => (
+                            <button key={r.label} type="button" onClick={() => startCrop(r.v)}
+                                className={cx('h-7 px-2 rounded-md border text-xs', crop && crop.ratio === r.v ? 'border-accent bg-accent-soft' : 'border-line hover:bg-surface-2')}>{t(r.label)}</button>
+                        ))}
+                    </div>
+                    {crop && (
+                        <div className="grid grid-cols-2 gap-1.5">
+                            <Button size="sm" onClick={() => dispatch({ type: 'SET', values: { crop: null } })}>{t('Vazgeç')}</Button>
+                            <Button size="sm" variant="primary" icon={Crop} onClick={() => applyCrop(ed, crop)}>{t('Kırp')}</Button>
+                        </div>
+                    )}
+                </Field>
+            </div>
+        </details>
     );
 }
 

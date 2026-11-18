@@ -16,6 +16,7 @@ import Inspector from './Inspector';
 import BusyOverlay from './BusyOverlay';
 import Dialogs from './dialogs/Dialogs';
 import { GeneralTour } from './Tour';
+import { warmGains } from './adjustActions';
 
 let clipboard = null; // kopyalanan nesneler (dizi)
 
@@ -146,6 +147,12 @@ export default function Editor() {
             </div>
             {state.busy && <BusyOverlay busy={state.busy} />}
             <GeneralTour />
+            {/* sıcaklık önizlemesi: kırmızı/mavi kazancı (fotoğraf ayarları) */}
+            <svg width="0" height="0" className="absolute" aria-hidden="true">
+                <filter id="pw-warm" colorInterpolationFilters="sRGB">
+                    <feColorMatrix type="matrix" values={(() => { const g = warmGains(state.adjust?.warmth || 0); return `${g[0]} 0 0 0 0  0 1 0 0 0  0 0 ${g[2]} 0 0  0 0 0 1 0`; })()} />
+                </filter>
+            </svg>
             <Dialogs />
         </div>
     );
