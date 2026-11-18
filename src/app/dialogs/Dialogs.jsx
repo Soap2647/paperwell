@@ -18,6 +18,7 @@ import SocialExportDialog from './SocialExportDialog';
 import BatchDialog from './BatchDialog';
 import PreflightDialog from './PreflightDialog';
 import HistoryDialog from './HistoryDialog';
+import MotionDialog from './MotionDialog';
 import NewDesignDialog from './NewDesignDialog';
 
 function PositionGrid({ value, onChange, positions }) {
@@ -275,6 +276,7 @@ export default function Dialogs() {
             <BatchDialog open={d === 'batch'} onClose={close} />
             <PreflightDialog open={d === 'preflight'} onClose={close} />
             <HistoryDialog open={d === 'history'} onClose={close} />
+            <MotionDialog open={d === 'motion'} onClose={close} />
             <SignatureDialog
                 open={d === 'signature'}
                 onClose={close}

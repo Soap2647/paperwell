@@ -152,9 +152,9 @@ export default function Editor() {
                 </div>
             )}
             <TopBar pagesOpen={pagesOpen} onTogglePages={() => setPagesOpen((o) => !o)} />
-            <div className="flex-1 min-h-0 flex">
+            <div className="flex-1 min-h-0 flex flex-col md:flex-row relative">
                 <ToolRail />
-                {pagesOpen && <PagesPanel />}
+                {pagesOpen && <PagesPanel onClose={() => setPagesOpen(false)} />}
                 <Canvas />
                 <Inspector />
             </div>

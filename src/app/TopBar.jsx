@@ -1,6 +1,6 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles, Images, Lightbulb, ShieldCheck, Command, History,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles, Images, Lightbulb, ShieldCheck, Command, History, Clapperboard,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { download, exportPng, saveProject, upscaleImageDoc } from '../store/actions';
@@ -46,6 +46,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
         { label: t('Boyutu değiştir…'), icon: Scaling, onClick: () => open('resize') },
         { label: t('Sosyal medyaya hazırla…'), icon: Share2, onClick: () => open('social') },
         { label: t('Toplu işlem…'), icon: Images, onClick: () => open('batch') },
+        { label: t('Hareketli story (video)…'), icon: Clapperboard, onClick: () => open('motion') },
         { label: t('Arka planı kaldır'), icon: ImageMinus, onClick: () => dispatch({ type: 'SET', values: { dialog: 'bgremove', bgTarget: null } }), disabled: !isImage },
         '-',
         { label: t('Dışa aktar'), icon: FileOutput, onClick: () => open('export') },
@@ -72,7 +73,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
     ];
 
     return (
-        <header className="h-14 shrink-0 bg-surface border-b border-line flex items-center gap-2 px-2 relative z-30">
+        <header className="h-14 shrink-0 bg-surface border-b border-line flex items-center gap-1 sm:gap-2 px-1 sm:px-2 relative z-30 min-w-0">
             <IconButton icon={PanelLeft} label={t('Sayfalar')} active={pagesOpen} onClick={onTogglePages} />
             <button onClick={closeDoc} className="flex items-center gap-2 px-1.5 h-9 rounded-lg hover:bg-surface-3" title={t('Yeni dosya')}>
                 <Logo className="w-7 h-7" />
@@ -90,7 +91,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
             <div className="flex items-center gap-0.5 ml-auto md:ml-0">
                 <IconButton icon={Undo2} label={t('Geri al')} shortcut="Ctrl+Z" disabled={!state.past.length} onClick={() => dispatch({ type: 'UNDO' })} />
                 <IconButton icon={Redo2} label={t('Yinele')} shortcut="Ctrl+Y" disabled={!state.future.length} onClick={() => dispatch({ type: 'REDO' })} />
-                <IconButton icon={History} label={t('Geçmiş ve sürümler')} onClick={() => open('history')} />
+                <IconButton icon={History} label={t('Geçmiş ve sürümler')} onClick={() => open('history')} className="max-sm:!hidden" />
             </div>
 
             <div className="hidden md:flex items-center gap-0.5 mx-auto bg-surface-2 border border-line rounded-lg p-0.5">
@@ -123,14 +124,14 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
                 {state.search ? (
                     <SearchBar />
                 ) : (
-                    <IconButton icon={Search} label={t('Bul ve değiştir')} shortcut="Ctrl+F" onClick={() => dispatch({ type: 'SET', values: { search: { query: '', results: [], index: 0 } } })} />
+                    <IconButton icon={Search} label={t('Bul ve değiştir')} shortcut="Ctrl+F" className="max-sm:!hidden" onClick={() => dispatch({ type: 'SET', values: { search: { query: '', results: [], index: 0 } } })} />
                 )}
-                <IconButton icon={Command} label={t('Komut ara')} shortcut="Ctrl+K" onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))} />
+                <IconButton icon={Command} label={t('Komut ara')} shortcut="Ctrl+K" onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))} className="max-sm:!hidden" />
 
-                <Menu trigger={<span data-tour="tools-menu"><Tooltip label={t('Belge araçları')}><Button variant="ghost" icon={Wrench} className="hidden lg:inline-flex">{t('Belge araçları')}</Button></Tooltip><IconButton icon={Wrench} label={t('Belge araçları')} className="lg:hidden" /></span>} items={toolItems} align="right" />
-                <IconButton icon={Printer} label={t('Yazdır')} shortcut="Ctrl+P" onClick={() => open('print')} />
-                <Button variant="ghost" data-tour="preflight" icon={ShieldCheck} onClick={() => open('preflight')} className="hidden xl:inline-flex">{t('Kontrol et')}</Button>
-                <IconButton icon={ShieldCheck} label={t('Yayına hazır mı?')} onClick={() => open('preflight')} className="xl:hidden" />
+                <Menu trigger={<span data-tour="tools-menu"><Tooltip label={t('Belge araçları')}><Button variant="ghost" icon={Wrench} className="max-lg:!hidden">{t('Belge araçları')}</Button></Tooltip><IconButton icon={Wrench} label={t('Belge araçları')} className="lg:!hidden" /></span>} items={toolItems} align="right" />
+                <IconButton icon={Printer} label={t('Yazdır')} shortcut="Ctrl+P" onClick={() => open('print')} className="max-sm:!hidden" />
+                <Button variant="ghost" data-tour="preflight" icon={ShieldCheck} onClick={() => open('preflight')} className="max-xl:!hidden">{t('Kontrol et')}</Button>
+                <IconButton icon={ShieldCheck} label={t('Yayına hazır mı?')} onClick={() => open('preflight')} className="xl:!hidden" />
                 <Menu trigger={<IconButton icon={MoreHorizontal} label="Menu" />} items={moreItems} align="right" />
                 <Button variant="primary" data-tour="save" icon={Download} onClick={() => download(ed)} className="ml-1">
                     <span className="hidden sm:inline">{isImage ? t('PNG olarak indir') : isDesktop ? t('Kaydet') : t('İndir')}</span>

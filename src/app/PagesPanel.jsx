@@ -77,7 +77,7 @@ export default function PagesPanel() {
     };
 
     return (
-        <aside className="w-[188px] shrink-0 bg-surface-2 border-r border-line flex flex-col min-h-0">
+        <aside className="absolute md:static inset-y-0 left-0 z-30 shadow-pop md:shadow-none w-[188px] shrink-0 bg-surface-2 border-r border-line flex flex-col min-h-0">
             <div className="h-10 px-3 flex items-center justify-between border-b border-line">
                 <span className="text-xs font-semibold text-fg-2">{t('Sayfalar')} <span className="text-fg-3 font-normal">· {pages.length}</span></span>
                 {selected.size > 1 && <span className="text-[11px] text-accent-text">{selected.size} seçili</span>}

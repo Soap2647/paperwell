@@ -931,8 +931,47 @@ function RedactToolPanel({ opts, set }) {
     );
 }
 
+/** Geniş ekran mı (lg, 1024 px): değilse özellikler alttan açılan sayfada */
+function useWide() {
+    const q = '(min-width: 1024px)';
+    const [wide, setWide] = useState(() => window.matchMedia(q).matches);
+    useEffect(() => {
+        const m = window.matchMedia(q), on = () => setWide(m.matches);
+        m.addEventListener('change', on);
+        return () => m.removeEventListener('change', on);
+    }, []);
+    return wide;
+}
+
+/** Dar ekran: özellikler düğmesi ve alttan açılan sayfa; bir şey seçilince kendiliğinden açılır */
+function MobileSheet({ children }) {
+    const { state } = useEditor();
+    const [open, setOpen] = useState(false);
+    const selKey = state.selected?.id || '';
+    const [lastSel, setLastSel] = useState(selKey);
+    if (selKey !== lastSel) { setLastSel(selKey); if (selKey) setOpen(true); }
+    return (
+        <>
+            <button type="button" onClick={() => setOpen((o) => !o)} data-tour="inspector"
+                className="fixed right-3 bottom-[74px] md:bottom-4 z-40 h-10 px-4 rounded-full bg-accent text-white text-[13px] font-semibold shadow-pop inline-flex items-center gap-1.5">
+                <SlidersHorizontal className="w-4 h-4" />{t('Özellikler')}
+            </button>
+            {open && (
+                <div className="fixed inset-x-0 bottom-0 z-50 max-h-[62vh] bg-surface border-t border-line rounded-t-2xl shadow-pop flex flex-col">
+                    <div className="h-10 px-4 flex items-center justify-between border-b border-line shrink-0">
+                        <span className="text-xs font-semibold text-fg-2">{t('Özellikler')}</span>
+                        <button type="button" aria-label={t('Kapat')} onClick={() => setOpen(false)} className="w-8 h-8 -mr-2 flex items-center justify-center text-fg-2"><X className="w-4 h-4" /></button>
+                    </div>
+                    <div className="overflow-y-auto scroll-thin pb-4">{children}</div>
+                </div>
+            )}
+        </>
+    );
+}
+
 export default function Inspector() {
     const { state } = useEditor();
+    const wide = useWide();
     const sel = state.selected && findObject(state.objects, state.selected.id);
     const editing = state.editing;
 
@@ -943,12 +982,18 @@ export default function Inspector() {
     else if (sel) content = <ObjectPanel key={sel.obj.id} o={sel.obj} pageId={sel.pageId} />;
     else content = <ToolPanel tool={state.tool} />;
 
-    return (
-        <aside data-inspector data-tour="inspector" className="w-[272px] shrink-0 bg-surface border-l border-line overflow-y-auto scroll-thin hidden lg:block">
-            <div className="h-10 px-4 flex items-center border-b border-line text-xs font-semibold text-fg-2">{t('Özellikler')}</div>
+    const body = (
+        <>
             {!editing && !sel && !(state.selected?.ids?.length > 1) && <ToolIntro tool={state.tool} />}
             {content}
             {state.tool === 'select' && <LayersPanel />}
+        </>
+    );
+    if (!wide) return <MobileSheet>{body}</MobileSheet>;
+    return (
+        <aside data-inspector data-tour="inspector" className="w-[272px] shrink-0 bg-surface border-l border-line overflow-y-auto scroll-thin">
+            <div className="h-10 px-4 flex items-center border-b border-line text-xs font-semibold text-fg-2">{t('Özellikler')}</div>
+            {body}
         </aside>
     );
 }
