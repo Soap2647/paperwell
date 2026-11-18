@@ -139,7 +139,7 @@ Hiçbir dosya ya da görsel bir sunucuya gönderilmez. Modeller ilk kullanımda 
 | [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) (general-x4v3) | Netleştirme / büyütme | BSD-3 | ~5 MB |
 | [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR) + [Tesseract](https://github.com/tesseract-ocr/tesseract) | Yazı bulma ve okuma | Apache-2.0 | uygulamayla / ilk kullanımda |
 | [SAM 2](https://github.com/facebookresearch/sam2), [SlimSAM](https://github.com/czg1225/SlimSAM) | Nesne seçme | Apache-2.0 | ~14-62 MB |
-| [LayerD](https://github.com/CyberAgentAILab/LayerD) | Afişi katmanlara ayırma | Apache-2.0 | indirilirken gösterilir |
+| [LayerD](https://github.com/CyberAgentAILab/LayerD) ([ONNX](https://huggingface.co/Soap26/layerd-birefnet-onnx)) | Afişi katmanlara ayırma | Apache-2.0 | indirilirken gösterilir |
 | [BiRefNet](https://github.com/ZhengPeng7/BiRefNet), [U²-Net](https://github.com/xuebinqin/U-2-Net) | Arka plan kaldırma | MIT / Apache-2.0 | ~5 MB+ |
 | [hunspell-tr](https://github.com/wooorm/dictionaries) | Türkçe yazım denetimi | MIT | uygulamayla (~9 MB) |
 
