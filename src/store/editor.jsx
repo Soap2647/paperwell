@@ -79,11 +79,28 @@ function findObject(objects, id) {
     return null;
 }
 
+// Geçmiş panelinde görünen adım adları (eylem kendi etiketini verebilir: a.label)
+const STEP_LABELS = {
+    ADD_OBJECT: 'Öğe eklendi', REMOVE_OBJECT: 'Öğe silindi', REMOVE_OBJECTS: 'Öğeler silindi', UPDATE_OBJECT: 'Öğe değiştirildi',
+    UPDATE_OBJECTS: 'Öğeler değiştirildi', COMMIT: 'Belge değiştirildi', CHECKPOINT: 'Ayar değiştirildi', REORDER_OBJECT: 'Sıra değiştirildi',
+    RESTORE_VERSION: 'Sürüme dönüldü',
+};
+
+/** Yeni geri alma adımı açılan her eylemde adıma ad ve saat yazılır */
 function reducer(s, a) {
+    const n = baseReducer(s, a);
+    if (n !== s && n.past !== s.past && n.past.length && n.past[n.past.length - 1] !== s.past[s.past.length - 1]) {
+        const i = n.past.length - 1;
+        n.past[i] = { ...n.past[i], label: a.label || STEP_LABELS[a.type] || a.type, at: Date.now() };
+    }
+    return n;
+}
+
+function baseReducer(s, a) {
     switch (a.type) {
         case 'LOAD':
             // original: açılıştaki hali (önce/sonra karşılaştırması için; geri alma geçmişi sınırlı olduğundan ayrıca tutulur)
-            return { ...initialState, opts: s.opts, doc: a.doc, objects: a.objects || {}, redactions: a.redactions || {}, forms: a.forms || initialState.forms, dirty: !!a.dirty, zoom: s.zoom, rulers: s.rulers, tool: 'select', loadId: Date.now(), original: a.original || { bytes: a.doc.bytes, pages: a.doc.pages } };
+            return { ...initialState, opts: s.opts, doc: a.doc, objects: a.objects || {}, redactions: a.redactions || {}, forms: a.forms || initialState.forms, versions: a.versions || [], dirty: !!a.dirty, zoom: s.zoom, rulers: s.rulers, tool: 'select', loadId: Date.now(), original: a.original || { bytes: a.doc.bytes, pages: a.doc.pages } };
         case 'CLOSE':
             return { ...initialState, opts: s.opts, rulers: s.rulers };
         case 'COMMIT': {
@@ -162,6 +179,23 @@ function reducer(s, a) {
         }
         case 'CHECKPOINT':
             return { ...s, past: pushPast(s), future: [], dirty: true };
+        case 'JUMP': {
+            // geçmişteki bir adıma dön: o adımdan sonraki her şey geri alınır (yinele ile geri gelir)
+            let n = s;
+            while (n.past.length > a.index) n = baseReducer(n, { type: 'UNDO' });
+            return n;
+        }
+        case 'SAVE_VERSION': {
+            const v = { id: `v${Date.now()}`, name: a.name, at: Date.now(), doc: s.doc, objects: s.objects, redactions: s.redactions };
+            return { ...s, versions: [v, ...(s.versions || [])].slice(0, 30), dirty: true };
+        }
+        case 'DELETE_VERSION':
+            return { ...s, versions: (s.versions || []).filter((v) => v.id !== a.id) };
+        case 'RESTORE_VERSION': {
+            const v = (s.versions || []).find((x) => x.id === a.id);
+            if (!v) return s;
+            return { ...s, past: pushPast(s), future: [], doc: { ...v.doc, path: s.doc.path, projectPath: s.doc.projectPath, projectName: s.doc.projectName }, objects: v.objects, redactions: v.redactions || {}, selected: null, editing: null, dirty: true, page: Math.min(s.page, v.doc.pages.length - 1) };
+        }
         case 'UNDO': {
             if (!s.past.length) return s;
             const prev = s.past[s.past.length - 1];

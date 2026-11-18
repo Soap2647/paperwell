@@ -17,6 +17,11 @@ export async function serializeProject(s) {
         doc, pages: s.doc.pages, objects: s.objects, redactions: s.redactions, forms: s.forms, originalPages: s.original?.pages,
     }));
     zip.file('document.pdf', s.doc.bytes);
+    // sürümler: her biri kendi belge baytları ve nesneleriyle
+    (s.versions || []).forEach((v, i) => {
+        zip.file(`versions/${i}.json`, JSON.stringify({ id: v.id, name: v.name, at: v.at, doc: Object.fromEntries(DOC_KEYS.filter((k) => v.doc[k] !== undefined).map((k) => [k, v.doc[k]])), pages: v.doc.pages, objects: v.objects, redactions: v.redactions }));
+        zip.file(`versions/${i}.pdf`, v.doc.bytes);
+    });
     if (s.original?.bytes && s.original.bytes !== s.doc.bytes) zip.file('original.pdf', s.original.bytes);
     return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 3 } });
 }
@@ -33,7 +38,13 @@ export async function parseProject(bytes) {
     const docBytes = await pdf.async('uint8array');
     const orig = zip.file('original.pdf');
     const original = orig ? { bytes: await orig.async('uint8array'), pages: j.originalPages || j.pages } : null;
+    const versions = [];
+    for (let i = 0; zip.file(`versions/${i}.json`); i++) {
+        const v = JSON.parse(await zip.file(`versions/${i}.json`).async('string'));
+        versions.push({ ...v, doc: { ...v.doc, bytes: await zip.file(`versions/${i}.pdf`).async('uint8array'), pages: v.pages } });
+    }
     return {
+        versions,
         doc: { ...j.doc, bytes: docBytes, pages: j.pages },
         objects: j.objects || {},
         redactions: j.redactions || {},

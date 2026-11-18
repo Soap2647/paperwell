@@ -1,6 +1,6 @@
 import {
     PanelLeft, Undo2, Redo2, ZoomIn, ZoomOut, Search, Download, Wrench, Combine, Scissors, Minimize2, Stamp, Hash,
-    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles, Images, Lightbulb, ShieldCheck, Command,
+    FileOutput, Info, ScanText, ImageMinus, ScanLine, Layers, Printer, FilePlus2, Keyboard, Moon, Sun, Monitor, Languages, ChevronDown, MoreHorizontal, Ruler, Scaling, SplitSquareHorizontal, Share2, FileImage, FileText, FolderDown, Sparkles, Images, Lightbulb, ShieldCheck, Command, History,
 } from 'lucide-react';
 import { useEditor } from '../store/editor';
 import { download, exportPng, saveProject, upscaleImageDoc } from '../store/actions';
@@ -90,6 +90,7 @@ export default function TopBar({ pagesOpen, onTogglePages }) {
             <div className="flex items-center gap-0.5 ml-auto md:ml-0">
                 <IconButton icon={Undo2} label={t('Geri al')} shortcut="Ctrl+Z" disabled={!state.past.length} onClick={() => dispatch({ type: 'UNDO' })} />
                 <IconButton icon={Redo2} label={t('Yinele')} shortcut="Ctrl+Y" disabled={!state.future.length} onClick={() => dispatch({ type: 'REDO' })} />
+                <IconButton icon={History} label={t('Geçmiş ve sürümler')} onClick={() => open('history')} />
             </div>
 
             <div className="hidden md:flex items-center gap-0.5 mx-auto bg-surface-2 border border-line rounded-lg p-0.5">
