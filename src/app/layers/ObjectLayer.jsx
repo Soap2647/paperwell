@@ -20,7 +20,8 @@ export default function ObjectLayer({ page, zoom, interactive, objects }) {
     const rootRef = useRef(null);
     const bandRef = useRef(null);
     const [band, setBand] = useState(null);
-    const editingId = state.editing?.kind === 'text' || state.editing?.kind === 'note' ? state.editing.id : null;
+    // küçük resim (objects verilir) düzenleme açmaz: açarsa odağı ana sayfadaki yeni metin kutusundan çalar, kutu boş diye silinirdi
+    const editingId = !objects && (state.editing?.kind === 'text' || state.editing?.kind === 'note') ? state.editing.id : null;
     const drag = useRef(null);
     const [fx, setFx] = useState(null); // sürükleme sırasında akıllı kılavuz çizgileri ve ölçü etiketi
     const guidesRef = useRef([]);
@@ -101,6 +102,8 @@ export default function ObjectLayer({ page, zoom, interactive, objects }) {
     const bandDown = (e) => {
         if (e.button !== 0) return;
         const p = eventToPage(e, rootRef.current, zoom);
+        // düzenlenen yazı önce bırakılır: blur kaydeder (yoksa eleman kalkar, blur gelmez, yazılan kaybolurdu)
+        if (editingId) document.activeElement?.blur?.();
         if (!e.shiftKey && (selectedId || editingId)) dispatch({ type: 'SET', values: { selected: null, editing: null } });
         e.currentTarget.setPointerCapture?.(e.pointerId);
         bandRef.current = { a: p, add: e.shiftKey ? multiIds || (selectedId ? [selectedId] : []) : [] };
